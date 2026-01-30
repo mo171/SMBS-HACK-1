@@ -1,9 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Send, Mic, Image as ImageIcon, Sparkles } from "lucide-react";
+import {
+  Plus,
+  Send,
+  Mic,
+  Image as ImageIcon,
+  Sparkles,
+  Loader2,
+} from "lucide-react";
 import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
+import { chatService } from "@/services/chatService";
+import { useAuthStore } from "@/store/authStore";
 
 // Initial Mock Data to match the design
 const INITIAL_MESSAGES = [
@@ -52,6 +61,8 @@ export default function ChatInterface() {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
+  const { user } = useAuthStore();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -59,9 +70,9 @@ export default function ChatInterface() {
   }, [messages]);
 
   const handleSendMessage = async (text) => {
+    // Current text support is limited, focus on voice for now or implement text API later
     if (!text.trim()) return;
 
-    // 1. Add User Message
     const userMsg = {
       id: Date.now().toString(),
       role: "user",
@@ -75,25 +86,81 @@ export default function ChatInterface() {
 
     setMessages((prev) => [...prev, userMsg]);
     setInputText("");
+  };
 
-    // 2. Simulate API Call / Processing
-    // In future, this will be: const response = await fetch('/api/chat', ...)
+  const handleSendVoice = async (audioBlob) => {
+    setIsProcessing(true);
 
-    // Simulate thinking delay
-    setTimeout(() => {
-      // Add AI Response (Mock)
-      const aiMsg = {
-        id: (Date.now() + 1).toString(),
+    // 1. Add temporary user audio message (visual feedback)
+    const tempId = Date.now().toString();
+    const userMsg = {
+      id: tempId,
+      role: "user",
+      type: "audio", // We can add an audio player here later if needed
+      content: "🎤 Voice Command Sent",
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    // 2. Add loading state
+    const loadingId = (Date.now() + 1).toString();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: loadingId,
         role: "ai",
-        type: "text", // Default to text for now
-        content: "I've processed your request. Is there anything else?",
+        type: "loading",
+        content: "Listening & Processing...",
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ]);
+
+    try {
+      // 3. Call API
+      const sessionId = user?.id || "default_guest";
+      const response = await chatService.sendVoiceCommand(audioBlob, sessionId);
+
+      // 4. Remove loading and add AI response
+      setMessages((prev) => prev.filter((m) => m.id !== loadingId));
+
+      const aiMsg = {
+        id: (Date.now() + 2).toString(),
+        role: "ai",
+        type: response.analysis?.intent_type || "text",
+        content: response.reply,
+        data: response.analysis?.data, // The intent data for cards
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         }),
       };
       setMessages((prev) => [...prev, aiMsg]);
-    }, 1000);
+    } catch (error) {
+      console.error("Voice command failed:", error);
+      setMessages((prev) => prev.filter((m) => m.id !== loadingId));
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 3).toString(),
+          role: "ai",
+          type: "text",
+          content:
+            "Sorry, I encountered an error processing your voice command.",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -122,6 +189,7 @@ export default function ChatInterface() {
       <div className="p-6 pt-2 bg-gradient-to-t from-[#030014] via-[#030014] to-transparent">
         <ChatInput
           onSend={handleSendMessage}
+          onSendVoice={handleSendVoice}
           inputText={inputText}
           setInputText={setInputText}
         />

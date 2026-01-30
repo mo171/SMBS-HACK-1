@@ -1,5 +1,10 @@
 import { User, Sparkles, Check, X, Loader2 } from "lucide-react";
 import Image from "next/image";
+import InvoiceCard from "./cards/InvoiceCard";
+import StockCard from "./cards/StockCard";
+import DebtCard from "./cards/DebtCard";
+import { toast } from "sonner";
+import { chatService } from "@/services/chatService";
 
 export default function MessageBubble({ message }) {
   const isAi = message.role === "ai";
@@ -39,41 +44,55 @@ export default function MessageBubble({ message }) {
           </div>
         )}
 
-        {/* Rich Content: Invoice Card */}
+        {/* Dynamic Cards */}
+        {message.type === "CREATE_INVOICE" && (
+          <InvoiceCard
+            data={message.data}
+            onConfirm={async () => {
+              if (message.data?.invoice_id) {
+                try {
+                  // InvoiceCard handles the loading state UI, so we just wait
+                  await chatService.confirmInvoice(message.data.invoice_id);
+                  toast.success("Invoice Made");
+                } catch (error) {
+                  toast.error("Failed to confirm invoice");
+                  console.error(error);
+                  throw error; // Re-throw so InvoiceCard knows it failed
+                }
+              } else {
+                toast.error(
+                  "Error: Invoice ID missing. Try creating a new invoice.",
+                );
+              }
+            }}
+            onReject={() => toast.info("Invoice cancelled")}
+          />
+        )}
+
+        {message.type === "CHECK_STOCK" && <StockCard data={message.data} />}
+
+        {message.type === "PAYMENT_REMINDER" && (
+          <DebtCard data={message.data} />
+        )}
+
+        {/* Legacy Support for Mock Data (remove if not needed) */}
         {message.type === "rich-card" &&
           message.data?.cardType === "invoice_draft" && (
-            <div className="mt-3 w-full min-w-[320px] bg-[#0F1016] border border-white/5 rounded-xl overflow-hidden">
-              <div className="p-5">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-white">
-                      {message.data.details.id.split(" ")[0]}{" "}
-                      <span className="text-[#5865F2]">
-                        {message.data.details.id.split(" ")[1]}
-                      </span>
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {message.data.details.client} | Due:{" "}
-                      {message.data.details.dueDate}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-[#5865F2] mb-6">
-                  {message.data.details.amount}
-                </div>
-
-                <div className="flex gap-3">
-                  <button className="flex-1 bg-[#5865F2] hover:bg-[#4752C4] text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors">
-                    <Check className="w-3 h-3" />
-                    Confirm & Send
-                  </button>
-                  <button className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-white/10">
-                    <X className="w-3 h-3" />
-                    Reject
-                  </button>
-                </div>
-              </div>
-            </div>
+            <InvoiceCard
+              data={{
+                customer_name: message.data.details.client,
+                items: [
+                  {
+                    name: "Service",
+                    quantity: 1,
+                    price: parseInt(
+                      message.data.details.amount.replace(/[^0-9]/g, ""),
+                    ),
+                  },
+                ],
+              }}
+              onConfirm={() => toast.success("Mock Invoice Confirmed")}
+            />
           )}
 
         {/* Loading State */}

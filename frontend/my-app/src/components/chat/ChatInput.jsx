@@ -1,4 +1,6 @@
-import { Send, Mic, Image as ImageIcon } from "lucide-react";
+import { Send, Mic, Image as ImageIcon, Square } from "lucide-react";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { useState, useEffect } from "react";
 
 const SUGGESTIONS = [
   "Create Invoice",
@@ -7,7 +9,43 @@ const SUGGESTIONS = [
   "Update Inventory",
 ];
 
-export default function ChatInput({ onSend, inputText, setInputText }) {
+export default function ChatInput({
+  onSend,
+  inputText,
+  setInputText,
+  onSendVoice,
+}) {
+  const { isRecording, startRecording, stopRecording } = useAudioRecorder();
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  useEffect(() => {
+    let interval;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      const audioBlob = await stopRecording();
+      if (audioBlob) {
+        onSendVoice(audioBlob);
+      }
+    } else {
+      await startRecording();
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -44,9 +82,25 @@ export default function ChatInput({ onSend, inputText, setInputText }) {
           />
 
           <div className="flex items-center gap-1 pr-2">
-            <button className="p-2 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-white/5">
-              <Mic className="w-4 h-4" />
+            <button
+              onClick={handleMicClick}
+              className={`p-2 transition-all rounded-lg ${
+                isRecording
+                  ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 animate-pulse"
+                  : "text-gray-500 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {isRecording ? (
+                <Square className="w-4 h-4 fill-current" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
             </button>
+            {isRecording && (
+              <span className="text-xs text-red-400 font-mono min-w-[40px]">
+                {formatTime(recordingTime)}
+              </span>
+            )}
             <button className="p-2 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-white/5">
               <ImageIcon className="w-4 h-4" />
             </button>
