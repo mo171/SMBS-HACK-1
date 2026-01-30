@@ -80,8 +80,20 @@ async def intent_parser(
                 raise ValueError("Intent data is missing from the response")
 
             if result.intent_type == "CREATE_INVOICE":
+                # Robustness check: Ensure mandatory fields are actually there
+                if not result.data.customer_name or not result.data.items:
+                    print(
+                        f"!!! Validation Error: Incomplete Invoice Data: {result.data}"
+                    )
+                    return {
+                        "status": "pending",
+                        "reply": "I'm sorry, I seem to have lost the invoice details. Could you please repeat what you want to bill?",
+                        "analysis": result.model_dump(),
+                    }
+
                 action_data = await action_service.execute_invoice(result.data)
                 if action_data.get("status") == "error":
+                    print(f"!!! execute_invoice Error: {action_data.get('message')}")
                     raise Exception(
                         action_data.get("message", "Unknown error creating invoice")
                     )

@@ -8,15 +8,13 @@
   * CHECK_STOCK
 """
 
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
+import os
 from typing import List, Optional, Union, Dict
 from pydantic import BaseModel, Field
 from openai import OpenAI
-import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize client with key from environment
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -31,7 +29,14 @@ class InvoiceItem(BaseModel):
 
 class CreateInvoiceIntent(BaseModel):
     customer_name: str = Field(description="The full name of the customer")
-    items: List[InvoiceItem] = Field(description="List of items to be billed")
+    items: List[InvoiceItem] = Field(
+        description="List of items to be billed. Ensure names are detailed (e.g., 'Paint Bucket (Red)')"
+    )
+    # Changed default to None to distinguish between 'paid 0' and 'unknown'
+    amount_paid: Optional[float] = Field(
+        default=None,
+        description="The amount the customer paid upfront. None if unknown.",
+    )
 
 
 class PaymentReminderIntent(BaseModel):
@@ -53,11 +58,13 @@ class RecordPaymentIntent(BaseModel):
 
 # Update UserIntent to include the new data type
 class UserIntent(BaseModel):
+    internal_thought: str = Field(
+        description="Your step-by-step reasoning about the business task. Analyze what you know and what is missing specifically (e.g., 'I have the customer name and payment, but No items yet')."
+    )
     intent_type: str = Field(
-        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK,RECORD_PAYMENT or GENERAL"
+        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, RECORD_PAYMENT or GENERAL"
     )
     confidence: float
-    # Now includes CheckStockIntent
     data: Optional[
         Union[
             CreateInvoiceIntent,
@@ -93,19 +100,23 @@ session_manager = SessionManager()
 class IntentService:
     def __init__(self):
         self.system_instruction = (
-            "You are an expert Business Agent for Indian merchants. "
-            "You will receive transcripts data "
-            "TASK: 1. Extract data into English for the JSON schema. "
-            "2. Write the 'response_text' ONLY in the user's native language. "
-            "3. If info is missing, ask for it politely in that native language. "
-            "4. Use 'Existing Data' to avoid repeating questions."
+            "You are a sophisticated AI Business Agent for Indian merchants. Your goal is to manage the shop's ledger and inventory through natural conversation. "
+            "You will receive 'Existing Memory' (current state) and 'New Voice' (new input). "
+            "1. REASONING: First, use 'internal_thought' to analyze the business state. (e.g., 'The user is creating an invoice for Rajesh. I have items, but I don't know the upfront payment yet. I must ask about the payment before finalizing.') "
+            "2. BE AGENTIC: Identify what is physically missing to complete the task (Customer, Items, or Upfront Payment). "
+            "3. CONTEXT: Always merge New Voice into Existing Memory. Never delete old data unless the user asks to change it. "
+            "4. RESPONSE: Speak naturally in the requested language. "
+            "5. COMPLETION: Only when you have enough data to actually save the invoice should you set 'missing_info' to an empty list."
         )
 
     async def parse_message(self, text, language):
         completion = client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": self.system_instruction},
+                {
+                    "role": "system",
+                    "content": f"{self.system_instruction}\n\nIMPORTANT: Speak ONLY in {language}.",
+                },
                 {"role": "user", "content": text},
             ],
             response_format=UserIntent,

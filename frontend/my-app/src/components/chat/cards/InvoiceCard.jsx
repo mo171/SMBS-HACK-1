@@ -86,10 +86,26 @@ export default function InvoiceCard({ data, onConfirm, onReject }) {
           )}
         </div>
 
-        <div className="flex justify-between items-center mb-6 px-1">
+        <div className="flex justify-between items-center mb-2 px-1">
           <span className="text-sm text-gray-400">Total Amount</span>
+          <span className="text-xl font-bold text-white">₹{totalAmount}</span>
+        </div>
+
+        {data.amount_paid > 0 && (
+          <div className="flex justify-between items-center mb-2 px-1 pt-2 border-t border-white/5">
+            <span className="text-xs text-green-400 font-medium italic">
+              Amount Paid Upfront
+            </span>
+            <span className="text-sm font-bold text-green-400">
+              - ₹{data.amount_paid}
+            </span>
+          </div>
+        )}
+
+        <div className="flex justify-between items-center mb-6 px-1 pt-2 border-t border-white/5">
+          <span className="text-sm text-gray-400">Balance Due</span>
           <span className="text-xl font-bold text-[#5865F2]">
-            ₹{totalAmount}
+            ₹{totalAmount - (data.amount_paid || 0)}
           </span>
         </div>
 

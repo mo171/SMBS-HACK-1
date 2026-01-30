@@ -66,7 +66,24 @@ class ActionService:
             ]
             self.supabase.table("invoice_items").insert(line_items).execute()
 
-            return {"status": "success", "invoice_id": invoice_id, "amount": total_amt}
+            # Record Partial Payment if exists
+            amount_paid = getattr(intent_data, "amount_paid", 0)
+            if amount_paid and amount_paid > 0:
+                self.supabase.table("payments").insert(
+                    {
+                        "customer_id": customer_id,
+                        # Removed invoice_id as it doesn't exist in the schema
+                        "amount_received": amount_paid,
+                        "payment_mode": "Cash",  # Default
+                    }
+                ).execute()
+
+            return {
+                "status": "success",
+                "invoice_id": invoice_id,
+                "amount": total_amt,
+                "amount_paid": amount_paid,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
