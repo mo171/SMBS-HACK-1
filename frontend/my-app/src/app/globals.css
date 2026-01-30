@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  /* Exact deep space background from image */
+  /* True black background */
+  --background: #1a1d2c;
+  --foreground: #ffffff;
+
+  /* The specific purple/indigo used in buttons */
+  --primary: #5865f2;
+  --primary-hover: #4752c4;
+
+  /* Secondary/Accent colors */
+  --accent: #8b5cf6;
+  --glass-border: rgba(255, 255, 255, 0.08);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+  overflow-x: hidden;
+  /* subtle star field effect */
+  background-image:
+    radial-gradient(white, rgba(255, 255, 255, 0.2) 2px, transparent 3px),
+    radial-gradient(white, rgba(255, 255, 255, 0.15) 1px, transparent 2px),
+    radial-gradient(white, rgba(255, 255, 255, 0.1) 2px, transparent 3px);
+  background-size:
+    550px 550px,
+    350px 350px,
+    250px 250px;
+  background-position:
+    0 0,
+    40px 60px,
+    130px 270px;
+}
+
+/* Custom Utilities */
+.glass-nav {
+  background: rgba(20, 28, 52, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05); /* Very subtle border */
+}
+
+/* The specific glow behind the hero text */
+.hero-glow {
+  background: radial-gradient(circle at center, rgba(88, 101, 242, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+}
+
+.text-gradient {
+  background: linear-gradient(to right, #ffffff 0%, #a5a6af 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Refined Button Styles */
+.btn-primary {
+  background-color: #7047eb; /* Matching the purple from the screenshot */
+  color: white;
+  box-shadow: 0 0 20px rgba(112, 71, 235, 0.3);
+}
+.btn-primary:hover {
+  background-color: #5e3bc7;
+}
+
+.btn-secondary {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
+.btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
