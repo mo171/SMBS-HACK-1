@@ -14,55 +14,35 @@ import ChatInput from "./ChatInput";
 import { chatService } from "@/services/chatService";
 import { useAuthStore } from "@/store/authStore";
 
-// Initial Mock Data to match the design
-const INITIAL_MESSAGES = [
-  {
-    id: "1",
-    role: "ai",
-    type: "text",
-    content:
-      "Hi Rajesh! 👋 I'm your AI assistant. I can help you create invoices, send reminders, and manage your business. What would you like to do today?",
-    timestamp: "05:02",
-  },
-  {
-    id: "2",
-    role: "user",
-    type: "text",
-    content: "Create an Invoice for Acme Corp. Amount 50000, due in 30 days",
-    timestamp: "05:04",
-  },
-  {
-    id: "3",
-    role: "ai",
-    type: "rich-card", // This helps us distinguish special UI elements
-    content:
-      "Perfect! I've created a draft invoice. Please review the details:",
-    data: {
-      cardType: "invoice_draft",
-      details: {
-        id: "INV-0025",
-        client: "Acme Corp",
-        dueDate: "Feb 29, 2026",
-        amount: "₹50,000",
-      },
-    },
-    timestamp: "05:05",
-  },
-  {
-    id: "4",
-    role: "ai",
-    type: "loading", // Simulating a processing state
-    content: "Creating invoice",
-    timestamp: "05:05",
-  },
-];
-
 export default function ChatInterface() {
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const { user } = useAuthStore();
+  const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
-  const { user } = useAuthStore();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  useEffect(() => {
+    if (user && !hasInitialized) {
+      // Get name from user metadata or email or default
+      const userName =
+        user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+
+      const welcomeMsg = {
+        id: "welcome",
+        role: "ai",
+        type: "text",
+        content: `Hi ${userName}! 👋 I'm your AI assistant. I can help you create invoices, send reminders, and manage your business. Record your audio and I will do the work for you.`,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+
+      setMessages([welcomeMsg]);
+      setHasInitialized(true);
+    }
+  }, [user, hasInitialized]);
 
   // Auto-scroll to bottom
   useEffect(() => {

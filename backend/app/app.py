@@ -90,12 +90,14 @@ async def intent_parser(
                 if hasattr(result.data, "items"):  # Verify it's the right object
                     pass
 
-            elif result.intent_type == "CHECK_STOCK":
+            if result.intent_type == "CHECK_STOCK":
                 stock = await action_service.get_stock(result.data.product_name)
                 if stock["found"]:
                     reply = f"You have {stock['stock']} units of {stock['name']} left."
                 else:
                     reply = f"Sorry, I couldn't find {result.data.product_name} in your inventory."
+                # action_data for stock
+                stock_data = stock
 
             elif result.intent_type == "RECORD_PAYMENT":
                 pay_res = await action_service.record_payment(
@@ -142,15 +144,19 @@ async def intent_parser(
                             "invoice_id"
                         ]
 
+            # Inject stock data if present
+            if result.intent_type == "CHECK_STOCK" and "stock_data" in locals():
+                if final_response["analysis"].get("data"):
+                    final_response["analysis"]["data"].update(stock_data)
+
             return final_response
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Action Failed: {str(e)}")
 
     finally:
-        # if os.path.exists(temp_path):
-        #     os.remove(temp_path)
-        pass
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @app.patch("/invoices/{invoice_id}/confirm")
