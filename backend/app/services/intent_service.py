@@ -26,12 +26,24 @@ class PaymentReminderIntent(BaseModel):
     customer_name: str
     amount_due: Optional[float] = None
 
+class CheckStockIntent(BaseModel):
+    product_name: str = Field(description="The name of the item to look up in inventory")
+
+class RecordPaymentIntent(BaseModel):
+    customer_name: str
+    amount: float
+    payment_mode: Optional[str] = "Cash"
+
+# Update UserIntent to include the new data type
 class UserIntent(BaseModel):
-    intent_type: str = Field(description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, or GENERAL")
-    confidence: float = Field(description="Score between 0-1")
-    data: Optional[Union[CreateInvoiceIntent, PaymentReminderIntent]] = None
-    missing_info: List[str] = Field(description="Fields like 'price' or 'customer_name' that are still needed")
-    response_text: str = Field(description="A natural response in the user's local language asking for missing info or confirming success")
+    intent_type: str = Field(description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK,RECORD_PAYMENT or GENERAL")
+    confidence: float
+    # Now includes CheckStockIntent
+    data: Optional[Union[CreateInvoiceIntent, PaymentReminderIntent, CheckStockIntent, RecordPaymentIntent]] = None
+    missing_info: List[str]
+    response_text: str
+
+
 
 # --- SESSION MANAGER ---
 class SessionManager:

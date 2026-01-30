@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import shutil
 from openai import OpenAI
+from services.action_service import action_service
 from services.intent_service import intent_service, session_manager
 
 load_dotenv()
@@ -19,11 +20,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/")
+async def health_check():
+    return {"message": "Bharat Biz-Agent API is running"}
+
+
 @app.post("/intent-parser")
 async def intent_parser(
-    audio_file: UploadFile = File(...), 
+    audio_file: UploadFile = File(...),
     session_id: str = Form("default_user"),
-    user_lang: str = Form("Marathi") # Added language selection from frontend
+    user_lang: str = Form("Marathi"),  # Added language selection from frontend
 ):
     if not audio_file.content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="Invalid audio format")
@@ -39,9 +46,9 @@ async def intent_parser(
                 model="whisper-1",
                 file=audio,
                 # Setting language ensures Whisper doesn't try to translate to English
-                language="mr" if user_lang.lower() == "marathi" else "hi" 
+                language="mr" if user_lang.lower() == "marathi" else "hi",
             )
-        
+
         raw_text = transcript.text.strip()
 
         # 2. Contextual Processing
@@ -52,12 +59,39 @@ async def intent_parser(
         result = await intent_service.parse_message(context, language=user_lang)
 
         # 4. Save or Clear Session
-        if not result.missing_info:
+        # Inside your app.py route:
+        if result.intent_type == "CHECK_STOCK":
+            product_to_check = result.data.product_name
+            stock_info = await action_service.get_stock(product_to_check)
+
+            if stock_info["found"]:
+                # Update the AI's response with the REAL number from the DB
+                final_reply = f"You have {stock_info['stock']} units of {stock_info['name']} in stock."
+            else:
+                final_reply = (
+                    f"I couldn't find {product_to_check} in your inventory list."
+                )
+
+            return {"status": "complete", "reply": final_reply, "data": stock_info}
+
+        if not result.missing_info and result.intent_type == "CREATE_INVOICE":
+            # Optional: Save immediately as a 'Draft'
+            db_status = await action_service.execute_invoice(result.data)
+
             session_manager.clear_session(session_id)
-            return {"status": "complete", "reply": result.response_text, "data": result}
+            return {
+                "status": "complete",
+                "reply": result.response_text,
+                "invoice_details": result.data,
+                "db_record": db_status,
+            }
         else:
             session_manager.save_session(session_id, result)
-            return {"status": "pending", "reply": result.response_text, "missing": result.missing_info}
+            return {
+                "status": "pending",
+                "reply": result.response_text,
+                "missing": result.missing_info,
+            }
 
     finally:
         if os.path.exists(temp_path):
