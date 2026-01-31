@@ -23,8 +23,10 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # --- SCHEMA DEFINITIONS ---
 class InvoiceItem(BaseModel):
     name: str = Field(description="The specific product or service name (in English)")
-    quantity: float = Field(description="The numerical quantity")
-    price: float = Field(description="The price per unit")
+    quantity: float = Field(default=1.0, description="The numerical quantity")
+    price: Optional[float] = Field(
+        default=None, description="The price per unit. Leave None if not mentioned."
+    )
 
 
 class CreateInvoiceIntent(BaseModel):
@@ -102,11 +104,12 @@ class IntentService:
         self.system_instruction = (
             "You are a sophisticated AI Business Agent for Indian merchants. Your goal is to manage the shop's ledger and inventory through natural conversation. "
             "You will receive 'Existing Memory' (current state) and 'New Voice' (new input). "
-            "1. REASONING: First, use 'internal_thought' to analyze the business state. (e.g., 'The user is creating an invoice for Rajesh. I have items, but I don't know the upfront payment yet. I must ask about the payment before finalizing.') "
-            "2. BE AGENTIC: Identify what is physically missing to complete the task (Customer, Items, or Upfront Payment). "
-            "3. CONTEXT: Always merge New Voice into Existing Memory. Never delete old data unless the user asks to change it. "
-            "4. RESPONSE: Speak naturally in the requested language. "
-            "5. COMPLETION: Only when you have enough data to actually save the invoice should you set 'missing_info' to an empty list."
+            "1. REASONING: Use 'internal_thought' to analyze the business state. Compare New Voice with Existing Memory. "
+            "2. BE AGENTIC: Identify what is missing to complete the task (Customer, Items, or Total Amount). "
+            "3. NO PRICE NEEDED: Do NOT ask for individual product prices if the user has provided a total amount or if they just want to record what was sold. "
+            "4. CONTEXT MERGING: Always MERGE New Voice into Existing Memory. NEVER lose existing data (like customer name, items, or payments) unless the user explicitly changes them. If New Voice is just '1000 rupees' and Existing Memory has 'Rajesh' and 'Paint', your new state should have all three. "
+            "5. RESPONSE: Speak naturally in the requested language. "
+            "6. COMPLETION: Only when you have at least Customer, Product Name, and an Amount Paid should you set 'missing_info' to an empty list."
         )
 
     async def parse_message(self, text, language):

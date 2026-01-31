@@ -23,6 +23,7 @@ const sidebarItems = [
   { icon: MessageSquare, label: "Workflow Chat", href: "/chat" },
   { icon: Workflow, label: "Workflows", href: "/workflows" },
   { icon: Zap, label: "Integrations", href: "/integrations" },
+  { icon: Settings, label: "Profile", href: "/profile" },
 ];
 
 export function Sidebar({ isCollapsed, toggleSidebar }) {

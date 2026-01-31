@@ -17,7 +17,6 @@ import { useAuthStore } from "@/store/authStore";
 export default function ChatInterface() {
   const { user } = useAuthStore();
   const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -48,25 +47,6 @@ export default function ChatInterface() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  const handleSendMessage = async (text) => {
-    // Current text support is limited, focus on voice for now or implement text API later
-    if (!text.trim()) return;
-
-    const userMsg = {
-      id: Date.now().toString(),
-      role: "user",
-      type: "text",
-      content: text,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputText("");
-  };
 
   const handleSendVoice = async (audioBlob) => {
     setIsProcessing(true);
@@ -144,7 +124,7 @@ export default function ChatInterface() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#030014] rounded-2xl border border-white/10 overflow-hidden relative">
+    <div className="flex flex-col h-full bg-[#030014] overflow-hidden relative">
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#030014]/50 backdrop-blur-md z-10">
         <div>
@@ -166,18 +146,8 @@ export default function ChatInterface() {
       </div>
 
       {/* Input Area */}
-      <div className="p-6 pt-2 bg-gradient-to-t from-[#030014] via-[#030014] to-transparent">
-        <ChatInput
-          onSend={handleSendMessage}
-          onSendVoice={handleSendVoice}
-          inputText={inputText}
-          setInputText={setInputText}
-        />
-        <div className="text-center mt-3">
-          <p className="text-[10px] text-gray-600">
-            Press Enter to send - Use voice for hands-free workflow
-          </p>
-        </div>
+      <div className="p-3 pt-1 bg-gradient-to-t from-[#030014] via-[#030014] to-transparent border-t border-white/10">
+        <ChatInput onSendVoice={handleSendVoice} />
       </div>
     </div>
   );

@@ -39,7 +39,14 @@ class ActionService:
             customer_id = await self.get_or_create_customer(intent_data.customer_name)
 
             # Insert Header
-            total_amt = sum(item.quantity * item.price for item in intent_data.items)
+            # Logic: If item prices are missing, use amount_paid as the total_amt
+            if any(item.price is None for item in intent_data.items):
+                total_amt = intent_data.amount_paid or 0
+            else:
+                total_amt = sum(
+                    item.quantity * item.price for item in intent_data.items
+                )
+
             inv_res = (
                 self.supabase.table("invoices")
                 .insert(
@@ -55,15 +62,26 @@ class ActionService:
             invoice_id = inv_res.data[0]["id"]
 
             # Insert Line Items (Triggers stock reduction automatically in DB)
-            line_items = [
-                {
-                    "invoice_id": invoice_id,
-                    "description": item.name,
-                    "quantity": item.quantity,
-                    "unit_price": item.price,
-                }
-                for item in intent_data.items
-            ]
+            line_items = []
+            for item in intent_data.items:
+                # If price is missing, and we have a total_amt, and it's a single item, use total_amt
+                # Otherwise if multiple items, we might just set unit_price to 0 or total_amt / len(items)
+                u_price = item.price
+                if u_price is None:
+                    if len(intent_data.items) == 1:
+                        u_price = total_amt / (item.quantity or 1)
+                    else:
+                        u_price = 0  # Or some other fallback
+
+                line_items.append(
+                    {
+                        "invoice_id": invoice_id,
+                        "description": item.name,
+                        "quantity": item.quantity,
+                        "unit_price": u_price,
+                    }
+                )
+
             self.supabase.table("invoice_items").insert(line_items).execute()
 
             # Record Partial Payment if exists
