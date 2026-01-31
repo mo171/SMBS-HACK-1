@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
-from ..workflows.schema import WorkflowBlueprint
+from workflows.schema import WorkflowBlueprint
+
 
 class WorkflowArchitect:
     def __init__(self):
@@ -14,10 +15,9 @@ class WorkflowArchitect:
             "Available Services: razorpay, whatsapp, google_sheets, instagram, timer. "
             "Example: 'If I get a payment, log it to sheets' -> Trigger: razorpay, Action: google_sheets."
         )
-        
+
         # This returns a pure Python object matching our Blueprint schema
-        blueprint = await self.structured_llm.ainvoke([
-            ("system", system_msg),
-            ("human", user_prompt)
-        ])
+        blueprint = await self.structured_llm.ainvoke(
+            [("system", system_msg), ("human", user_prompt)]
+        )
         return blueprint

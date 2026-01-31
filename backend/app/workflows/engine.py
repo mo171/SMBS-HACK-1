@@ -1,8 +1,8 @@
 from inngest import Inngest, Step
-from integrations import TOOL_REGISTRY  # The "Phonebook" of all your tools
-from utils.variable_resolver import resolve_variables
+from integrations import TOOL_REGISTRY
+from lib.variable_resolver import resolve_variables
 from datetime import datetime
-from ..lib.supabase_lib import supabase
+from lib.supabase_lib import supabase
 
 # 1. Initialize Inngest
 inngest_client = Inngest(app_id="biz_flow_engine")

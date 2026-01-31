@@ -7,7 +7,7 @@ from services.action_service import action_service
 from services.intent_service import intent_service, session_manager
 from dotenv import load_dotenv
 from lib.supabase_lib import supabase
-from lib.twillo_config import verify_twilio
+from lib.twilio_config import verify_twilio
 from fastapi.responses import Response
 from twilio.twiml.messaging_response import MessagingResponse
 from agents.architect import WorkflowArchitect
@@ -370,8 +370,6 @@ async def save_workflow(blueprint: WorkflowBlueprint, user_id: str):
     return {"message": "Workflow is live!"}
 
 
-
-
 @app.post("/webhooks/{service_name}")
 async def webhook_dispatcher(service_name: str, request: Request):
     # 1. Capture the data sent by the service (Razorpay/Instagram)
@@ -389,8 +387,8 @@ async def webhook_dispatcher(service_name: str, request: Request):
             "workflow/run_requested",
             data={
                 "blueprint": blueprint,
-                "payload": payload  # This becomes 'trigger_data' in our engine
-            }
+                "payload": payload,  # This becomes 'trigger_data' in our engine
+            },
         )
 
     return {"status": "dispatched", "count": len(blueprints)}
