@@ -120,6 +120,7 @@ class IntentService:
             "6. RESPONSE: Speak naturally in the requested language. "
             "7. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
             "8. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, set intent_type to 'GENERATE_REPORT'."
+            "9. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name."
         )
 
     async def parse_message(self, text, language):

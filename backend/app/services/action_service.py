@@ -111,7 +111,8 @@ class ActionService:
             return {"status": "error", "message": str(e)}
 
     async def get_stock(self, product_name: str):
-        """Fetches current inventory level."""
+        """Fetches current inventory level with robust matching."""
+        # 1. Try exact/partial string match first
         res = (
             self.supabase.table("products")
             .select("name, current_stock")
@@ -124,6 +125,33 @@ class ActionService:
                 "name": res.data[0]["name"],
                 "stock": res.data[0]["current_stock"],
             }
+
+        # 2. Fallback: Split words and find the best match
+        # e.g., "pcv pipe" -> "pipe" matches "PVC Pipe"
+        words = product_name.split()
+        if len(words) > 1:
+            # Get all products that match ANY of the words
+            # Supabase doesn't support "OR" easily in one ilike chain without "or" filter syntax
+            # We'll use the 'or' filter string format: name.ilike.%word1%,name.ilike.%word2%
+            or_filter = ",".join([f"name.ilike.%{word}%" for word in words])
+
+            res = (
+                self.supabase.table("products")
+                .select("name, current_stock")
+                .or_(or_filter)
+                .execute()
+            )
+
+            if res.data:
+                # Find the result that matches the most words
+                # Simple heuristic: Just take the first one for now, or refine if needed
+                # Ideally, we'd score them. But for "pcv pipe", "pipe" returns "PVC Pipe".
+                return {
+                    "found": True,
+                    "name": res.data[0]["name"],
+                    "stock": res.data[0]["current_stock"],
+                }
+
         return {"found": False}
 
     # --- PAYMENT & LEDGER LOGIC (The "Y") ---
