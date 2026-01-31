@@ -13,6 +13,7 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import { chatService } from "@/services/chatService";
 import { useAuthStore } from "@/store/authStore";
+import { toast } from "sonner";
 
 export default function ChatInterface() {
   const { user } = useAuthStore();
@@ -101,6 +102,16 @@ export default function ChatInterface() {
         }),
       };
       setMessages((prev) => [...prev, aiMsg]);
+
+      // Auto-trigger download for reports
+      if (response.analysis?.intent_type === "GENERATE_REPORT") {
+        try {
+          await chatService.downloadInventory();
+          toast.success("Downloading Inventory Report...");
+        } catch (error) {
+          console.error("Auto-download failed:", error);
+        }
+      }
     } catch (error) {
       console.error("Voice command failed:", error);
       setMessages((prev) => prev.filter((m) => m.id !== loadingId));

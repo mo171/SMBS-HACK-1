@@ -7,6 +7,8 @@ from services.action_service import action_service
 from services.intent_service import intent_service, session_manager
 from dotenv import load_dotenv
 from lib.supabase_lib import supabase
+from fastapi.responses import Response, StreamingResponse
+import io
 
 load_dotenv()
 
@@ -81,7 +83,12 @@ async def intent_parser(
 
             if result.intent_type == "CREATE_INVOICE":
                 # Robustness check: Ensure mandatory fields are actually there
-                if not result.data.customer_name or not result.data.items:
+                if (
+                    not result.data
+                    or not hasattr(result.data, "customer_name")
+                    or not result.data.customer_name
+                    or not result.data.items
+                ):
                     print(
                         f"!!! Validation Error: Incomplete Invoice Data: {result.data}"
                     )
@@ -98,17 +105,13 @@ async def intent_parser(
                         action_data.get("message", "Unknown error creating invoice")
                     )
                 reply = f"Invoice created successfully for {result.data.customer_name}."
-                # Inject invoice_id into the response data for frontend usage
-                if hasattr(result.data, "items"):  # Verify it's the right object
-                    pass
 
-            if result.intent_type == "CHECK_STOCK":
+            elif result.intent_type == "CHECK_STOCK":
                 stock = await action_service.get_stock(result.data.product_name)
                 if stock["found"]:
                     reply = f"You have {stock['stock']} units of {stock['name']} left."
                 else:
                     reply = f"Sorry, I couldn't find {result.data.product_name} in your inventory."
-                # action_data for stock
                 stock_data = stock
 
             elif result.intent_type == "RECORD_PAYMENT":
@@ -120,6 +123,10 @@ async def intent_parser(
                         pay_res.get("message", "Unknown error recording payment")
                     )
                 reply = f"Recorded payment of {result.data.amount} from {result.data.customer_name}."
+
+            elif result.intent_type == "GENERATE_REPORT":
+                download_url = "/export/inventory"
+                reply = f"Report generated successfully. Download here: {download_url}"
 
             elif result.intent_type == "PAYMENT_REMINDER":
                 ledger = await action_service.get_customer_ledger(
@@ -182,3 +189,40 @@ async def confirm_invoice(invoice_id: str):
     )
 
     return {"status": "success", "message": "Invoice is now active and added to ledger"}
+
+
+@app.get("/export/inventory")
+async def export_inventory():
+    """Download current inventory as Excel."""
+    file_data = await action_service.generate_inventory_excel()
+    return Response(
+        content=file_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=inventory.xlsx"},
+    )
+
+
+@app.get("/export/invoice/{invoice_id}")
+async def export_invoice_pdf(invoice_id: str):
+    """Download a specific invoice as PDF."""
+    pdf_bytes = await action_service.generate_invoice_pdf(invoice_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=invoice_{invoice_id}.pdf"
+        },
+    )
+
+
+@app.get("/export/invoice-excel/{invoice_id}")
+async def export_invoice_excel(invoice_id: str):
+    """Download a specific invoice as Excel."""
+    file_data = await action_service.generate_invoice_excel(invoice_id)
+    return Response(
+        content=file_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename=invoice_{invoice_id}.xlsx"
+        },
+    )

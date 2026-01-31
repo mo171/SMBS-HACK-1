@@ -1,4 +1,4 @@
-import { User, Sparkles, Check, X, Loader2 } from "lucide-react";
+import { User, Sparkles, Check, X, Loader2, FileText } from "lucide-react";
 import Image from "next/image";
 import InvoiceCard from "./cards/InvoiceCard";
 import StockCard from "./cards/StockCard";
@@ -51,13 +51,17 @@ export default function MessageBubble({ message }) {
             onConfirm={async () => {
               if (message.data?.invoice_id) {
                 try {
-                  // InvoiceCard handles the loading state UI, so we just wait
+                  // 1. Confirm the invoice status
                   await chatService.confirmInvoice(message.data.invoice_id);
-                  toast.success("Invoice Made");
+                  toast.success("Invoice Confirmed & Status Updated");
+
+                  // 2. Automatically trigger the PDF download
+                  await chatService.downloadInvoice(message.data.invoice_id);
+                  toast.info("Downloading Invoice PDF...");
                 } catch (error) {
-                  toast.error("Failed to confirm invoice");
+                  toast.error("Failed to process invoice confirmation");
                   console.error(error);
-                  throw error; // Re-throw so InvoiceCard knows it failed
+                  throw error;
                 }
               } else {
                 toast.error(
@@ -67,6 +71,39 @@ export default function MessageBubble({ message }) {
             }}
             onReject={() => toast.info("Invoice cancelled")}
           />
+        )}
+
+        {message.type === "GENERATE_REPORT" && (
+          <div className="mt-3 w-full max-w-[320px] bg-[#0F1016] border border-white/5 rounded-xl p-5 flex flex-col gap-4 transition-all duration-300">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <FileText className="w-6 h-6 text-green-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  Inventory Report Ready
+                </h3>
+                <p className="text-[11px] text-gray-400">
+                  Ready to download as Excel
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  await chatService.downloadInventory();
+                  toast.success("Downloading Inventory Report...");
+                } catch (error) {
+                  toast.error("Failed to download report");
+                  console.error(error);
+                }
+              }}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-green-600/10"
+            >
+              <Sparkles className="w-3 h-3" />
+              Download Excel
+            </button>
+          </div>
         )}
 
         {message.type === "CHECK_STOCK" && <StockCard data={message.data} />}

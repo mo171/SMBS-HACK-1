@@ -58,13 +58,20 @@ class RecordPaymentIntent(BaseModel):
     payment_mode: Optional[str] = "Cash"
 
 
+class GenerateReportIntent(BaseModel):
+    report_type: str = Field(
+        default="inventory",
+        description="The type of report: 'inventory', 'sales', etc.",
+    )
+
+
 # Update UserIntent to include the new data type
 class UserIntent(BaseModel):
     internal_thought: str = Field(
         description="Your step-by-step reasoning about the business task. Analyze what you know and what is missing specifically (e.g., 'I have the customer name and payment, but No items yet')."
     )
     intent_type: str = Field(
-        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, RECORD_PAYMENT or GENERAL"
+        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, RECORD_PAYMENT, GENERATE_REPORT, or GENERAL"
     )
     confidence: float
     data: Optional[
@@ -73,6 +80,7 @@ class UserIntent(BaseModel):
             PaymentReminderIntent,
             CheckStockIntent,
             RecordPaymentIntent,
+            GenerateReportIntent,
         ]
     ] = None
     missing_info: List[str]
@@ -110,6 +118,8 @@ class IntentService:
             "4. CONTEXT MERGING: Always MERGE New Voice into Existing Memory. NEVER lose existing data (like customer name, items, or payments) unless the user explicitly changes them. If New Voice is just '1000 rupees' and Existing Memory has 'Rajesh' and 'Paint', your new state should have all three. "
             "5. RESPONSE: Speak naturally in the requested language. "
             "6. COMPLETION: Only when you have at least Customer, Product Name, and an Amount Paid should you set 'missing_info' to an empty list."
+            "7. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, "
+            "set intent_type to 'GENERATE_REPORT'."
         )
 
     async def parse_message(self, text, language):
@@ -118,7 +128,7 @@ class IntentService:
             messages=[
                 {
                     "role": "system",
-                    "content": f"{self.system_instruction}\n\nIMPORTANT: Speak ONLY in {language}.",
+                    "content": f"{self.system_instruction}\n\nIMPORTANT: Speak ONLY in English or Hinglish.",
                 },
                 {"role": "user", "content": text},
             ],

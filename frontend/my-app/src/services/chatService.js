@@ -45,4 +45,53 @@ export const chatService = {
     const response = await api.patch(`/invoices/${invoiceId}/confirm`);
     return response.data;
   },
+
+  /**
+   * Triggers a file download.
+   * @param {string} endpoint - The API endpoint to fetch the file from.
+   * @param {string} filename - The name to save the file as.
+   */
+  downloadFile: async (endpoint, filename) => {
+    const response = await api.get(endpoint, {
+      responseType: "blob",
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Downloads the inventory report as Excel.
+   */
+  downloadInventory: async () => {
+    return chatService.downloadFile("/export/inventory", "inventory.xlsx");
+  },
+
+  /**
+   * Downloads a specific invoice as PDF.
+   * @param {string} invoiceId - The ID of the invoice.
+   */
+  downloadInvoice: async (invoiceId) => {
+    return chatService.downloadFile(
+      `/export/invoice/${invoiceId}`,
+      `invoice_${invoiceId}.pdf`,
+    );
+  },
+
+  /**
+   * Downloads a specific invoice as Excel.
+   * @param {string} invoiceId - The ID of the invoice.
+   */
+  downloadInvoiceExcel: async (invoiceId) => {
+    return chatService.downloadFile(
+      `/export/invoice-excel/${invoiceId}`,
+      `invoice_${invoiceId}.xlsx`,
+    );
+  },
 };
