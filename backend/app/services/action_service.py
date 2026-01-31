@@ -85,13 +85,17 @@ class ActionService:
 
             self.supabase.table("invoice_items").insert(line_items).execute()
 
-            # Record Partial Payment if exists
-            amount_paid = getattr(intent_data, "amount_paid", 0)
-            if amount_paid and amount_paid > 0:
+            # Record Payment (Full or Partial)
+            amount_paid = getattr(intent_data, "amount_paid", None)
+
+            # If nothing was said about payment, assume full payment
+            if amount_paid is None:
+                amount_paid = total_amt
+
+            if amount_paid > 0:
                 self.supabase.table("payments").insert(
                     {
                         "customer_id": customer_id,
-                        # Removed invoice_id as it doesn't exist in the schema
                         "amount_received": amount_paid,
                         "payment_mode": "Cash",  # Default
                     }
