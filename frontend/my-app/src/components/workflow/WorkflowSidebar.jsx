@@ -13,27 +13,85 @@ export default function WorkflowSidebar() {
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
 
+    console.log("🚀 [WorkflowSidebar] Generate button pressed");
+    console.log("📝 [WorkflowSidebar] Prompt:", prompt);
+
     setIsGenerating(true);
     try {
       const { api } = await import("@/lib/axios");
-      const response = await api.post("/workflow/draft", { prompt });
+      const { supabase } = await import("@/lib/supabase");
+      const { useAuthStore } = await import("@/store/authStore");
 
-      const { nodes, edges } = response.data;
+      // Get current user
+      const user = useAuthStore.getState().user;
+      console.log("👤 [WorkflowSidebar] Current user:", user?.id);
+
+      if (!user) {
+        console.error("❌ [WorkflowSidebar] No user logged in");
+        toast.error("Please log in to generate workflows");
+        return;
+      }
+
+      // Call the new endpoint with query params
+      console.log("📡 [WorkflowSidebar] Calling /workflow/draft endpoint");
+      console.log("📤 [WorkflowSidebar] Request params:", {
+        prompt,
+        user_id: user.id,
+      });
+
+      const response = await api.post("/workflow/draft", null, {
+        params: {
+          prompt: prompt,
+          user_id: user.id,
+        },
+      });
+
+      console.log("📥 [WorkflowSidebar] API response:", response.data);
+      const { workflow_id } = response.data;
+      console.log("🆔 [WorkflowSidebar] Workflow ID:", workflow_id);
+
+      // Fetch the workflow from Supabase
+      console.log("🔍 [WorkflowSidebar] Fetching workflow from Supabase");
+      const { data: workflow, error } = await supabase
+        .from("workflow_blueprints")
+        .select("*")
+        .eq("id", workflow_id)
+        .single();
+
+      if (error) {
+        console.error("❌ [WorkflowSidebar] Supabase fetch error:", error);
+        throw new Error("Failed to fetch workflow: " + error.message);
+      }
+
+      console.log("✅ [WorkflowSidebar] Workflow fetched:", workflow);
+      console.log("📊 [WorkflowSidebar] Nodes count:", workflow.nodes?.length);
+      console.log("🔗 [WorkflowSidebar] Edges count:", workflow.edges?.length);
 
       // Ensure nodes have the correct type for our custom components
-      const formattedNodes = nodes.map((node) => ({
+      const formattedNodes = workflow.nodes.map((node) => ({
         ...node,
         type: "workflowNode",
       }));
 
-      setElements(formattedNodes, edges);
+      console.log("🎨 [WorkflowSidebar] Formatted nodes:", formattedNodes);
+      console.log("💾 [WorkflowSidebar] Setting elements to store");
+
+      setElements(formattedNodes, workflow.edges);
+
+      console.log("✨ [WorkflowSidebar] Workflow generation complete!");
       toast.success("Workflow generated successfully!");
       setPrompt("");
     } catch (error) {
-      console.error("Generation error:", error);
+      console.error("❌ [WorkflowSidebar] Generation error:", error);
+      console.error(
+        "❌ [WorkflowSidebar] Error details:",
+        error.message,
+        error.stack,
+      );
       toast.error("Failed to generate workflow. Please try again.");
     } finally {
       setIsGenerating(false);
+      console.log("🏁 [WorkflowSidebar] Generation process ended");
     }
   };
 

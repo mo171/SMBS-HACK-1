@@ -51,7 +51,8 @@ const NODE_CONFIG = {
 };
 
 const WorkflowNode = ({ data, selected }) => {
-  const config = NODE_CONFIG[data.type] || NODE_CONFIG["process"];
+  // Use data.service for config lookup, fallback to process
+  const config = NODE_CONFIG[data.service] || NODE_CONFIG["process"];
   const Icon = config.icon;
 
   return (
@@ -74,8 +75,8 @@ const WorkflowNode = ({ data, selected }) => {
           >
             <Icon className="w-3.5 h-3.5" />
           </div>
-          <span className="text-sm font-semibold text-white/90">
-            {data.label}
+          <span className="text-sm font-semibold text-white/90 capitalize">
+            {data.service || data.label || "Node"}
           </span>
         </div>
         {/* Status Dot */}
@@ -85,7 +86,7 @@ const WorkflowNode = ({ data, selected }) => {
       {/* Body */}
       <div className="p-3 bg-black/20 select-none">
         <p className="text-[10px] text-gray-400">
-          {data.description || "Configuration"}
+          {data.task || data.description || "Configuration"}
         </p>
         <div className="mt-1 h-1 w-full bg-white/5 rounded-full overflow-hidden">
           <div className="h-full w-2/3 bg-white/10" />

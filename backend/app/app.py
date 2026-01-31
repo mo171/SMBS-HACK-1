@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import shutil
@@ -337,12 +337,75 @@ architect = WorkflowArchitect()
 
 
 @app.post("/workflow/draft")
-async def create_draft(prompt: str):
-    # 1. AI builds the JSON
-    blueprint = await architect.draft_workflow(prompt)
+async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
+    print("\n" + "=" * 60)
+    print("🚀 [/workflow/draft] Endpoint hit")
+    print(f"📝 [/workflow/draft] Prompt received: {prompt}")
+    print(f"👤 [/workflow/draft] User ID: {user_id}")
 
-    # 2. Return to frontend so React Flow can render it
-    return {"status": "success", "workflow": blueprint.dict()}
+    # 1. Ask LangChain to build the JSON
+    print("🤖 [/workflow/draft] Calling architect.draft_workflow()")
+    blueprint_obj = await architect.draft_workflow(prompt)
+    print(f"✅ [/workflow/draft] Blueprint object generated: {type(blueprint_obj)}")
+
+    # 2. Convert the Pydantic/LangChain object to a plain Python Dictionary
+    blueprint_json = blueprint_obj.model_dump()
+    print(f"📊 [/workflow/draft] Blueprint JSON: {blueprint_json}")
+    print(f"📊 [/workflow/draft] Nodes count: {len(blueprint_json.get('nodes', []))}")
+    print(f"🔗 [/workflow/draft] Edges count: {len(blueprint_json.get('edges', []))}")
+
+    # 3. Save it to Supabase so the Frontend can load it
+    print("💾 [/workflow/draft] Inserting into Supabase workflow_blueprints table")
+    result = (
+        supabase.table("workflow_blueprints")
+        .insert(
+            {
+                "user_id": user_id,
+                "name": f"AI Draft: {prompt[:20]}...",
+                "nodes": blueprint_json["nodes"],
+                "edges": blueprint_json["edges"],
+                "is_active": False,  # User needs to review it first!
+            }
+        )
+        .execute()
+    )
+
+    workflow_id = result.data[0]["id"]
+    print(f"✅ [/workflow/draft] Workflow saved with ID: {workflow_id}")
+    print("=" * 60 + "\n")
+
+    return {"status": "success", "workflow_id": workflow_id}
+
+
+@app.post("/workflow/execute")
+async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict = None):
+    """
+    Execute a workflow from the frontend and return run_id for monitoring.
+    """
+    print("\n" + "=" * 60)
+    print("▶️ [/workflow/execute] Endpoint hit")
+    print(f"📊 [/workflow/execute] Blueprint received: {blueprint}")
+    print(f"📦 [/workflow/execute] Payload: {payload}")
+
+    # Generate a unique run_id for this execution
+    import uuid
+
+    run_id = str(uuid.uuid4())
+    print(f"🆔 [/workflow/execute] Generated run_id: {run_id}")
+
+    # Send event to Inngest to start the workflow
+    print("📡 [/workflow/execute] Sending event to Inngest")
+    await inngest_client.send(
+        "workflow/run_requested",
+        data={
+            "blueprint": blueprint.dict(),
+            "payload": payload or {},
+        },
+    )
+    print("✅ [/workflow/execute] Event sent to Inngest")
+    print("=" * 60 + "\n")
+
+    return {"status": "success", "run_id": run_id}
 
 
 @app.post("/webhooks/razorpay")

@@ -1,22 +1,34 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 
+
+class NodeParams(BaseModel):
+    """Flexible parameters for workflow nodes. Can contain any key-value pairs."""
+
+    model_config = ConfigDict(extra="allow")
+
+
 class NodeData(BaseModel):
-    service: str = Field(description="The service name, e.g., 'razorpay', 'whatsapp', 'google_sheets'")
-    task: str = Field(description="The specific action or event, e.g., 'payment_captured', 'send_message'")
-    params: Optional[Dict[str, Any]] = Field(description="Parameters like message text or sheet name")
+    service: str
+    task: str
+    # Use a concrete dict or a string-based params field
+    params: dict = Field(default_factory=dict)
+
 
 class WorkflowNode(BaseModel):
     id: str
-    type: str = Field(description="Either 'trigger' or 'action'")
+    type: str
     data: NodeData
+    # React Flow MUST have position
+    position: dict = Field(default={"x": 250, "y": 250})
+
 
 class WorkflowEdge(BaseModel):
     id: str
-    source: str = Field(description="The ID of the starting node")
-    target: str = Field(description="The ID of the destination node")
+    source: str
+    target: str
+
 
 class WorkflowBlueprint(BaseModel):
-    name: str
     nodes: List[WorkflowNode]
     edges: List[WorkflowEdge]

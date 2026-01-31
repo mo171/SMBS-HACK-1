@@ -24,15 +24,19 @@ export default function NodeConfigPanel() {
     updateNodeData(selectedNode.id, data);
   };
 
-  // Auto-save on change
+  // Auto-save on change (debounced to prevent infinite loops)
   const currentValues = watch();
   useEffect(() => {
-    if (selectedNode) {
-      updateNodeData(selectedNode.id, currentValues);
-    }
-  }, [currentValues]);
+    if (selectedNode && currentValues) {
+      const timeoutId = setTimeout(() => {
+        updateNodeData(selectedNode.id, currentValues);
+      }, 300); // Debounce for 300ms
 
-  const isWhatsApp = selectedNode.data?.type === "whatsapp";
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentValues, selectedNode?.id, updateNodeData]);
+
+  const isWhatsApp = selectedNode.data?.service === "whatsapp";
 
   return (
     <div className="w-80 border-l border-white/10 bg-[#0F1016]/95 backdrop-blur-xl flex flex-col h-full animate-in slide-in-from-right duration-300">
@@ -66,7 +70,7 @@ export default function NodeConfigPanel() {
                   Phone Number
                 </label>
                 <input
-                  {...register("phoneNumber")}
+                  {...register("params.phoneNumber")}
                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                   placeholder="+1234567890"
                 />
@@ -77,7 +81,7 @@ export default function NodeConfigPanel() {
                   Message Body
                 </label>
                 <textarea
-                  {...register("message")}
+                  {...register("params.message")}
                   rows={4}
                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all resize-none"
                   placeholder="Hello, {{trigger_data.name}}!"
