@@ -1,9 +1,14 @@
+"use client";
+
+import { memo } from "react";
+import { Handle, Position } from "@xyflow/react";
 import {
   MessageSquare,
   GitBranch,
   Database,
   Mail,
   Terminal,
+  MessageCircle, // WhatsApp icon
 } from "lucide-react";
 
 const NODE_CONFIG = {
@@ -31,6 +36,12 @@ const NODE_CONFIG = {
     bg: "bg-green-400/10",
     border: "border-green-400/20",
   },
+  whatsapp: {
+    icon: MessageCircle,
+    color: "text-emerald-400",
+    bg: "bg-emerald-400/10",
+    border: "border-emerald-400/20",
+  },
   output: {
     icon: Mail,
     color: "text-pink-400",
@@ -39,39 +50,55 @@ const NODE_CONFIG = {
   },
 };
 
-export default function WorkflowNode({ node, onMouseDown }) {
-  const config = NODE_CONFIG[node.type] || NODE_CONFIG["process"];
+const WorkflowNode = ({ data, selected }) => {
+  const config = NODE_CONFIG[data.type] || NODE_CONFIG["process"];
   const Icon = config.icon;
 
   return (
     <div
-      onMouseDown={onMouseDown}
-      className={`absolute w-[200px] rounded-xl border backdrop-blur-md transition-shadow hover:shadow-lg hover:shadow-indigo-500/10 cursor-grab active:cursor-grabbing ${config.bg} ${config.border} z-10 hover:z-50`}
-      style={{ left: node.x, top: node.y }}
+      className={`w-[200px] rounded-xl border backdrop-blur-md transition-all ${
+        selected ? "ring-2 ring-indigo-500 shadow-lg shadow-indigo-500/20" : ""
+      } ${config.bg} ${config.border} hover:shadow-lg hover:shadow-indigo-500/10`}
     >
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!w-3 !h-3 !bg-gray-600 !border-2 !border-[#030014]"
+      />
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/5 flex items-center gap-3 select-none pointer-events-none">
-        <div
-          className={`w-6 h-6 rounded-md flex items-center justify-center bg-black/20 ${config.color}`}
-        >
-          <Icon className="w-3.5 h-3.5" />
+      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between select-none">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-6 h-6 rounded-md flex items-center justify-center bg-black/20 ${config.color}`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-sm font-semibold text-white/90">
+            {data.label}
+          </span>
         </div>
-        <span className="text-sm font-semibold text-white/90">
-          {node.label}
-        </span>
+        {/* Status Dot */}
+        <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
       </div>
 
       {/* Body */}
-      <div className="p-3 bg-black/20 select-none pointer-events-none">
-        <p className="text-[10px] text-gray-400">Configuration</p>
+      <div className="p-3 bg-black/20 select-none">
+        <p className="text-[10px] text-gray-400">
+          {data.description || "Configuration"}
+        </p>
         <div className="mt-1 h-1 w-full bg-white/5 rounded-full overflow-hidden">
           <div className="h-full w-2/3 bg-white/10" />
         </div>
       </div>
 
-      {/* Connection Points */}
-      <div className="absolute top-1/2 -left-1.5 w-3 h-3 bg-gray-600 rounded-full border-2 border-[#030014]" />
-      <div className="absolute top-1/2 -right-1.5 w-3 h-3 bg-gray-600 rounded-full border-2 border-[#030014]" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!w-3 !h-3 !bg-gray-600 !border-2 !border-[#030014]"
+      />
     </div>
   );
-}
+};
+
+export default memo(WorkflowNode);
