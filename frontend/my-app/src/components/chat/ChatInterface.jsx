@@ -13,7 +13,7 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import { chatService } from "@/services/chatService";
 import { useAuthStore } from "@/store/authStore";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 
 export default function ChatInterface() {
   const { user } = useAuthStore();

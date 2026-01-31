@@ -19,7 +19,7 @@ import {
   CheckCircle2,
   Send,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 
 const industryOptions = [
   { label: "Retail", value: "retail" },

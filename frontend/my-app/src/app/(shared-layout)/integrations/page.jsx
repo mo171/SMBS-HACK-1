@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   ExternalLink,
 } from "lucide-react";
-import { toast } from "sonner"; // Assuming sonner is installed or handle copy manually if not
+import { toast } from "react-hot-toast";
 
 export default function IntegrationsPage() {
   const [whatsappConnected, setWhatsappConnected] = useState(true);
@@ -34,8 +34,7 @@ export default function IntegrationsPage() {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    // Ideally use a toast here
-    alert("Copied to clipboard!");
+    toast.success("Copied to clipboard!");
   };
 
   return (
@@ -135,7 +134,7 @@ export default function IntegrationsPage() {
               </p>
               <div className="flex gap-2">
                 <div className="flex-1 bg-[#11121A] border border-white/10 rounded-xl px-4 py-3 font-mono text-sm text-gray-300 flex items-center">
-                  join glass-simple
+                  join material-red
                 </div>
                 <button
                   onClick={() => copyToClipboard("join glass-simple")}
@@ -147,7 +146,7 @@ export default function IntegrationsPage() {
             </div>
 
             {/* Webhook URL */}
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-gray-300">
                   Webhook URL
@@ -177,7 +176,7 @@ export default function IntegrationsPage() {
                   <Copy className="w-5 h-5" />
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
         </Card>
       )}

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import shutil
@@ -7,8 +7,10 @@ from services.action_service import action_service
 from services.intent_service import intent_service, session_manager
 from dotenv import load_dotenv
 from lib.supabase_lib import supabase
+from lib.twillo_config import verify_twilio
 from fastapi.responses import Response, StreamingResponse
 import io
+from twilio.twiml.messaging_response import MessagingResponse
 
 load_dotenv()
 
@@ -23,11 +25,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/")
-async def health_check():
-    return {"message": "Bharat Biz-Agent API is running"}
 
 
 @app.post("/intent-parser")
@@ -67,7 +64,7 @@ async def intent_parser(
         existing_memory = session_manager.get_session(session_id)
         context = f"Existing Memory: {existing_memory.model_dump_json() if existing_memory else 'None'}. New Voice: {raw_text}"
 
-        # 3. Gemini Processing (Handles Local Language Response)
+        # 3. openAI Processing (Handles Local Language Response)
         result = await intent_service.parse_message(context, language=user_lang)
 
         # 4. Save or Clear Session
@@ -226,3 +223,107 @@ async def export_invoice_excel(invoice_id: str):
             "Content-Disposition": f"attachment; filename=invoice_{invoice_id}.xlsx"
         },
     )
+
+
+@app.post("/whatsapp")
+async def whatsapp_webhook(
+    Body: str = Form(...), From: str = Form(...), _=Depends(verify_twilio)
+):
+    # 1. 'Body' is the text message (e.g., "Add 10kg sugar for Rahul")
+    # 2. 'From' is the sender's WhatsApp number, which we use as session_id
+    session_id = From
+    raw_text = Body
+
+    # 2. Contextual Processing
+    existing_memory = session_manager.get_session(session_id)
+    context = (
+        f"Existing Memory: {existing_memory.model_dump_json() if existing_memory else 'None'}. "
+        f"New Voice: {raw_text}"
+    )
+
+    # 3. openAI Processing (Handles Local Language Response)
+    # Defaulting to English for WhatsApp for now
+    result = await intent_service.parse_message(context, language="English")
+
+    # 4. Save or Clear Session
+    if result.missing_info:
+        # If data is missing, save state and ask follow-up
+        session_manager.save_session(session_id, result)
+        reply = result.response_text
+    else:
+        # If no info is missing, execute the specific action
+        try:
+            if not result.data:
+                raise ValueError("Intent data is missing from the response")
+
+            if result.intent_type == "CREATE_INVOICE":
+                # Robustness check: Ensure mandatory fields are actually there
+                if (
+                    not result.data
+                    or not hasattr(result.data, "customer_name")
+                    or not result.data.customer_name
+                    or not result.data.items
+                ):
+                    print(
+                        f"!!! Validation Error: Incomplete Invoice Data: {result.data}"
+                    )
+                    reply = "I'm sorry, I seem to have lost the invoice details. Could you please repeat what you want to bill?"
+                else:
+                    action_data = await action_service.execute_invoice(result.data)
+                    if action_data.get("status") == "error":
+                        print(
+                            f"!!! execute_invoice Error: {action_data.get('message')}"
+                        )
+                        raise Exception(
+                            action_data.get("message", "Unknown error creating invoice")
+                        )
+                    reply = (
+                        f"Invoice created successfully for {result.data.customer_name}."
+                    )
+
+            elif result.intent_type == "CHECK_STOCK":
+                stock = await action_service.get_stock(result.data.product_name)
+                if stock["found"]:
+                    reply = f"You have {stock['stock']} units of {stock['name']} left."
+                else:
+                    reply = f"Sorry, I couldn't find {result.data.product_name} in your inventory."
+
+            elif result.intent_type == "RECORD_PAYMENT":
+                pay_res = await action_service.record_payment(
+                    result.data.customer_name, result.data.amount
+                )
+                if pay_res.get("status") == "error":
+                    raise Exception(
+                        pay_res.get("message", "Unknown error recording payment")
+                    )
+                reply = f"Recorded payment of {result.data.amount} from {result.data.customer_name}."
+
+            elif result.intent_type == "GENERATE_REPORT":
+                download_url = "/export/inventory"
+                reply = f"Report generated successfully. Download here: {download_url}"
+
+            elif result.intent_type == "PAYMENT_REMINDER":
+                ledger = await action_service.get_customer_ledger(
+                    result.data.customer_name
+                )
+                if ledger.get("status") == "error":
+                    raise Exception(
+                        ledger.get("message", "Unknown error fetching ledger")
+                    )
+                reply = (
+                    f"{ledger['customer']} owes a balance of {ledger['balance_due']}."
+                )
+            else:
+                reply = result.response_text
+
+            # 3. Success & Cleanup
+            session_manager.clear_session(session_id)
+
+        except Exception as e:
+            reply = f"Action Failed: {str(e)}"
+
+    # 5. Respond back to the user on WhatsApp
+    resp = MessagingResponse()
+    resp.message(reply)
+
+    return Response(content=str(resp), media_type="application/xml")
