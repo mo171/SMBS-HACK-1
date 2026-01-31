@@ -9,6 +9,8 @@ import {
   Mail,
   Terminal,
   MessageCircle, // WhatsApp icon
+  CreditCard, // Razorpay icon
+  FileSpreadsheet, // Google Sheets icon
 } from "lucide-react";
 
 const NODE_CONFIG = {
@@ -41,6 +43,18 @@ const NODE_CONFIG = {
     color: "text-emerald-400",
     bg: "bg-emerald-400/10",
     border: "border-emerald-400/20",
+  },
+  razorpay: {
+    icon: CreditCard,
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
+    border: "border-blue-500/20",
+  },
+  google_sheets: {
+    icon: FileSpreadsheet,
+    color: "text-green-500",
+    bg: "bg-green-500/10",
+    border: "border-green-500/20",
   },
   output: {
     icon: Mail,

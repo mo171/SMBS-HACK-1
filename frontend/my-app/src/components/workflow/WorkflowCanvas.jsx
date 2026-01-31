@@ -70,7 +70,18 @@ export default function WorkflowCanvas() {
         edges: edges,
       };
 
+      // Sample trigger data for testing automation
+      const sampleTriggerData = {
+        customer_name: "Test Customer",
+        customer_email: "test@example.com",
+        customer_phone: "+919876543210",
+        order_id: "TEST" + Date.now(),
+        timestamp: new Date().toISOString(),
+        amount: 2500,
+      };
+
       console.log("🏗️ [WorkflowCanvas] Blueprint constructed:", blueprint);
+      console.log("📦 [WorkflowCanvas] Sample trigger data:", sampleTriggerData);
       console.log("📡 [WorkflowCanvas] Calling /workflow/execute endpoint");
       console.log(
         "🌐 [WorkflowCanvas] API URL:",
@@ -82,7 +93,10 @@ export default function WorkflowCanvas() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blueprint, payload: {} }),
+          body: JSON.stringify({ 
+            blueprint, 
+            payload: sampleTriggerData  // Use sample data for testing
+          }),
         },
       );
 

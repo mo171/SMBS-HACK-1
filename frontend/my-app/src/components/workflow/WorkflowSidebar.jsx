@@ -1,14 +1,47 @@
 "use client";
 
-import { Sparkles, Play } from "lucide-react";
-import { useState } from "react";
+import { Sparkles, Play, Save, FolderOpen, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import useWorkflowStore from "@/store/workflowStore";
 import { toast } from "react-hot-toast";
 
 export default function WorkflowSidebar() {
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const { setElements } = useWorkflowStore();
+  const [workflowName, setWorkflowName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedWorkflows, setSavedWorkflows] = useState([]);
+  const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
+  const [showSavedWorkflows, setShowSavedWorkflows] = useState(false);
+  
+  const { setElements, nodes, edges } = useWorkflowStore();
+
+  // Load saved workflows on component mount
+  useEffect(() => {
+    loadSavedWorkflows();
+  }, []);
+
+  const loadSavedWorkflows = async () => {
+    setIsLoadingWorkflows(true);
+    try {
+      const { api } = await import("@/lib/axios");
+      const { useAuthStore } = await import("@/store/authStore");
+      
+      const user = useAuthStore.getState().user;
+      if (!user) return;
+
+      const response = await api.get("/workflows", {
+        params: { user_id: user.id }
+      });
+
+      setSavedWorkflows(response.data.workflows || []);
+    } catch (error) {
+      console.error("Failed to load workflows:", error);
+      toast.error("Failed to load saved workflows");
+    } finally {
+      setIsLoadingWorkflows(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -81,6 +114,9 @@ export default function WorkflowSidebar() {
       console.log("✨ [WorkflowSidebar] Workflow generation complete!");
       toast.success("Workflow generated successfully!");
       setPrompt("");
+      
+      // Refresh saved workflows list
+      loadSavedWorkflows();
     } catch (error) {
       console.error("❌ [WorkflowSidebar] Generation error:", error);
       console.error(
@@ -95,10 +131,116 @@ export default function WorkflowSidebar() {
     }
   };
 
+  const handleSaveWorkflow = async () => {
+    if (!workflowName.trim()) {
+      toast.error("Please enter a workflow name");
+      return;
+    }
+
+    if (nodes.length === 0) {
+      toast.error("Cannot save empty workflow");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { api } = await import("@/lib/axios");
+      const { useAuthStore } = await import("@/store/authStore");
+
+      const user = useAuthStore.getState().user;
+      if (!user) {
+        toast.error("Please log in to save workflows");
+        return;
+      }
+
+      console.log("💾 [WorkflowSidebar] Saving workflow:", workflowName);
+      console.log("📊 [WorkflowSidebar] Nodes:", nodes.length);
+      console.log("🔗 [WorkflowSidebar] Edges:", edges.length);
+
+      const response = await api.post("/workflow/save", 
+        { 
+          blueprint: { 
+            nodes: nodes.map(node => ({
+              id: node.id,
+              type: node.data.type || "action",
+              data: node.data,
+              position: node.position
+            })), 
+            edges 
+          } 
+        },
+        { 
+          params: { 
+            user_id: user.id, 
+            workflow_name: workflowName 
+          } 
+        }
+      );
+
+      console.log("✅ [WorkflowSidebar] Workflow saved:", response.data);
+      toast.success("Workflow saved successfully!");
+      setWorkflowName("");
+      
+      // Refresh saved workflows list
+      loadSavedWorkflows();
+    } catch (error) {
+      console.error("❌ [WorkflowSidebar] Save error:", error);
+      toast.error("Failed to save workflow");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLoadWorkflow = async (workflow) => {
+    try {
+      console.log("📂 [WorkflowSidebar] Loading workflow:", workflow.name);
+      
+      // Ensure nodes have the correct type for our custom components
+      const formattedNodes = workflow.nodes.map((node) => ({
+        ...node,
+        type: "workflowNode",
+      }));
+
+      setElements(formattedNodes, workflow.edges);
+      toast.success(`Loaded workflow: ${workflow.name}`);
+      setShowSavedWorkflows(false);
+    } catch (error) {
+      console.error("❌ [WorkflowSidebar] Load error:", error);
+      toast.error("Failed to load workflow");
+    }
+  };
+
+  const handleDeleteWorkflow = async (workflowId, workflowName) => {
+    if (!confirm(`Are you sure you want to delete "${workflowName}"?`)) {
+      return;
+    }
+
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      const { useAuthStore } = await import("@/store/authStore");
+
+      const user = useAuthStore.getState().user;
+      if (!user) return;
+
+      await supabase
+        .from("workflow_blueprints")
+        .delete()
+        .eq("id", workflowId)
+        .eq("user_id", user.id);
+
+      toast.success("Workflow deleted successfully");
+      loadSavedWorkflows();
+    } catch (error) {
+      console.error("❌ [WorkflowSidebar] Delete error:", error);
+      toast.error("Failed to delete workflow");
+    }
+  };
+
   return (
     <div className="w-80 border-r border-white/10 flex flex-col bg-[#050510] z-10">
       <div className="flex-1 p-6 overflow-y-auto">
         <div className="space-y-6">
+          {/* AI Generation Section */}
           <div>
             <label className="text-xs font-semibold text-gray-400 uppercase mb-2 block">
               AI Workflow Prompt
@@ -133,6 +275,107 @@ export default function WorkflowSidebar() {
               </>
             )}
           </button>
+
+          {/* Save Current Workflow Section */}
+          <div className="pt-4 border-t border-white/10">
+            <label className="text-xs font-semibold text-gray-400 uppercase mb-2 block">
+              Save Current Workflow
+            </label>
+            <div className="space-y-3">
+              <input
+                className="w-full bg-[#0F1016] border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#5865F2] outline-none transition-colors placeholder:text-gray-600"
+                placeholder="Enter workflow name..."
+                value={workflowName}
+                onChange={(e) => setWorkflowName(e.target.value)}
+                disabled={isSaving}
+              />
+              <button
+                onClick={handleSaveWorkflow}
+                disabled={!workflowName.trim() || isSaving || nodes.length === 0}
+                className={`w-full py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+                  !workflowName.trim() || isSaving || nodes.length === 0
+                    ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
+                }`}
+              >
+                {isSaving ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    <span>Saving...</span>
+                  </div>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save Workflow
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Saved Workflows Section */}
+          <div className="pt-4 border-t border-white/10">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-xs font-semibold text-gray-400 uppercase">
+                Saved Workflows
+              </label>
+              <button
+                onClick={() => setShowSavedWorkflows(!showSavedWorkflows)}
+                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                {showSavedWorkflows ? "Hide" : "Show"}
+              </button>
+            </div>
+
+            {showSavedWorkflows && (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {isLoadingWorkflows ? (
+                  <div className="text-center py-4">
+                    <div className="w-5 h-5 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin mx-auto" />
+                    <p className="text-xs text-gray-500 mt-2">Loading...</p>
+                  </div>
+                ) : savedWorkflows.length === 0 ? (
+                  <p className="text-xs text-gray-500 text-center py-4">
+                    No saved workflows yet
+                  </p>
+                ) : (
+                  savedWorkflows.map((workflow) => (
+                    <div
+                      key={workflow.id}
+                      className="bg-[#0F1016] border border-white/10 rounded-lg p-3 hover:border-white/20 transition-colors group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-medium text-white truncate">
+                            {workflow.name}
+                          </h4>
+                          <p className="text-xs text-gray-500">
+                            {workflow.nodes?.length || 0} nodes • {new Date(workflow.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 ml-2">
+                          <button
+                            onClick={() => handleLoadWorkflow(workflow)}
+                            className="p-1.5 text-gray-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded transition-colors"
+                            title="Load workflow"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWorkflow(workflow.id, workflow.name)}
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                            title="Delete workflow"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
             <h4 className="text-indigo-400 text-xs font-bold mb-1 flex items-center gap-2">

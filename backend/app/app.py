@@ -424,13 +424,104 @@ async def razorpay_webhook(request: Request):
     return {"status": "accepted"}
 
 
+@app.get("/workflows")
+async def list_workflows(user_id: str = Query(...)):
+    """List all workflows for a user"""
+    print(f"\n📋 [/workflows] Listing workflows for user: {user_id}")
+    
+    try:
+        result = (
+            supabase.table("workflow_blueprints")
+            .select("id, name, created_at, is_active, nodes, edges")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        
+        workflows = result.data
+        print(f"✅ [/workflows] Found {len(workflows)} workflows")
+        
+        return {"status": "success", "workflows": workflows}
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch workflows: {str(e)}"
+        print(f"❌ [/workflows] {error_msg}")
+        raise HTTPException(500, error_msg)
+
+
+@app.get("/workflows/{workflow_id}")
+async def get_workflow(workflow_id: str, user_id: str = Query(...)):
+    """Get specific workflow details"""
+    print(f"\n🔍 [/workflows/{workflow_id}] Fetching workflow for user: {user_id}")
+    
+    try:
+        result = (
+            supabase.table("workflow_blueprints")
+            .select("*")
+            .eq("id", workflow_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        
+        workflow = result.data
+        print(f"✅ [/workflows/{workflow_id}] Workflow found: {workflow['name']}")
+        
+        return {"status": "success", "workflow": workflow}
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch workflow: {str(e)}"
+        print(f"❌ [/workflows/{workflow_id}] {error_msg}")
+        raise HTTPException(500, error_msg)
+
+
 # In backend/app.py
 @app.post("/workflow/save")
-async def save_workflow(blueprint: WorkflowBlueprint, user_id: str):
-    # 1. Convert the blueprint to a dictionary
-    # 2. Store it in your 'workflow_blueprints' table in Supabase
-    # 3. Mark it as 'active'
-    return {"message": "Workflow is live!"}
+async def save_workflow(
+    blueprint: WorkflowBlueprint, 
+    user_id: str = Query(...),
+    workflow_name: str = Query(...)
+):
+    print("\n" + "=" * 60)
+    print("💾 [/workflow/save] Endpoint hit")
+    print(f"👤 [/workflow/save] User ID: {user_id}")
+    print(f"📝 [/workflow/save] Workflow name: {workflow_name}")
+    print(f"📊 [/workflow/save] Blueprint: {blueprint}")
+    
+    try:
+        # Validate blueprint
+        if not blueprint.nodes:
+            print("❌ [/workflow/save] No nodes in blueprint")
+            raise HTTPException(400, "Workflow must have at least one node")
+        
+        print(f"📊 [/workflow/save] Nodes count: {len(blueprint.nodes)}")
+        print(f"🔗 [/workflow/save] Edges count: {len(blueprint.edges)}")
+        
+        # Convert blueprint to dict for storage
+        blueprint_data = {
+            "user_id": user_id,
+            "name": workflow_name,
+            "nodes": [node.dict() for node in blueprint.nodes],
+            "edges": [edge.dict() for edge in blueprint.edges],
+            "is_active": True,
+        }
+        
+        print("💾 [/workflow/save] Inserting into Supabase")
+        result = supabase.table("workflow_blueprints").insert(blueprint_data).execute()
+        
+        workflow_id = result.data[0]["id"]
+        print(f"✅ [/workflow/save] Workflow saved with ID: {workflow_id}")
+        print("=" * 60 + "\n")
+        
+        return {"status": "success", "workflow_id": workflow_id, "message": "Workflow saved successfully!"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Failed to save workflow: {str(e)}"
+        print(f"❌ [/workflow/save] {error_msg}")
+        print("=" * 60 + "\n")
+        raise HTTPException(500, error_msg)
 
 
 @app.post("/webhooks/{service_name}")
