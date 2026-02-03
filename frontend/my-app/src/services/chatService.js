@@ -47,6 +47,15 @@ export const chatService = {
   },
 
   /**
+   * Deletes an invoice.
+   * @param {string} invoiceId - The ID of the invoice to delete.
+   */
+  deleteInvoice: async (invoiceId) => {
+    const response = await api.delete(`/invoices/${invoiceId}`);
+    return response.data;
+  },
+
+  /**
    * Triggers a file download.
    * @param {string} endpoint - The API endpoint to fetch the file from.
    * @param {string} filename - The name to save the file as.

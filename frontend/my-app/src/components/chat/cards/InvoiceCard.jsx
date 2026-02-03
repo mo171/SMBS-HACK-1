@@ -4,6 +4,8 @@ import { Check, X, Loader2, FileText } from "lucide-react";
 export default function InvoiceCard({ data, onConfirm, onReject }) {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [isRejected, setIsRejected] = useState(false);
 
   // Safeguard: Ensure data exists
   if (!data) {
@@ -36,6 +38,18 @@ export default function InvoiceCard({ data, onConfirm, onReject }) {
     }
   };
 
+  const handleReject = async () => {
+    setIsRejecting(true);
+    try {
+      await onReject();
+      setIsRejected(true);
+    } catch (error) {
+      console.error("Rejection failed", error);
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
   if (isConfirmed) {
     return (
       <div className="mt-3 w-full max-w-[320px] bg-[#5865F2]/10 border border-[#5865F2]/20 rounded-xl p-4 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -47,6 +61,20 @@ export default function InvoiceCard({ data, onConfirm, onReject }) {
           <p className="text-xs text-[#5865F2]">
             Sent to {customer_name || "Customer"}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <div className="mt-3 w-full max-w-[320px] bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+          <X className="w-5 h-5 text-red-500" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-red-200">Invoice Rejected</h3>
+          <p className="text-xs text-red-400">This invoice has been deleted.</p>
         </div>
       </div>
     );
@@ -112,7 +140,7 @@ export default function InvoiceCard({ data, onConfirm, onReject }) {
         <div className="flex gap-3">
           <button
             onClick={handleConfirm}
-            disabled={isConfirming}
+            disabled={isConfirming || isRejecting}
             className="flex-1 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-[#5865F2]/20"
           >
             {isConfirming ? (
@@ -128,12 +156,21 @@ export default function InvoiceCard({ data, onConfirm, onReject }) {
             )}
           </button>
           <button
-            onClick={onReject}
-            disabled={isConfirming}
+            onClick={handleReject}
+            disabled={isConfirming || isRejecting}
             className="flex-1 bg-white/5 hover:bg-white/10 disabled:opacity-50 text-gray-400 hover:text-white py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-white/10"
           >
-            <X className="w-3 h-3" />
-            Reject
+            {isRejecting ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <X className="w-3 h-3" />
+                Reject
+              </>
+            )}
           </button>
         </div>
       </div>

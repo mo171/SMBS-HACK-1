@@ -69,7 +69,20 @@ export default function MessageBubble({ message }) {
                 );
               }
             }}
-            onReject={() => toast.info("Invoice cancelled")}
+            onReject={async () => {
+              if (message.data?.invoice_id) {
+                try {
+                  // Reject & Delete the invoice
+                  await chatService.deleteInvoice(message.data.invoice_id);
+                  toast.success("Invoice rejected & deleted");
+                } catch (error) {
+                  toast.error("Failed to reject invoice");
+                  console.error(error);
+                }
+              } else {
+                toast.info("Invoice draft cancelled");
+              }
+            }}
           />
         )}
 

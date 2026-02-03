@@ -8,19 +8,26 @@
   * CHECK_STOCK
 """
 
+# imports
 import os
 from typing import List, Optional, Union, Dict
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# config
 load_dotenv()
-
 # Initialize client with key from environment
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # --- SCHEMA DEFINITIONS ---
+"""
+ -SCHEMA IS THE CORE OF INTENT SPECIFIER
+ -HELPS TO TAKE UN-ORGANIZED DATA AND ORGANIZE IT
+"""
+
+
 class InvoiceItem(BaseModel):
     name: str = Field(description="The specific product or service name (in English)")
     quantity: float = Field(default=1.0, description="The numerical quantity")
@@ -37,7 +44,15 @@ class CreateInvoiceIntent(BaseModel):
     # Changed default to None to distinguish between 'paid 0' and 'unknown'
     amount_paid: Optional[float] = Field(
         default=None,
-        description="The amount the customer paid upfront. None if unknown.",
+        description="The amount the customer paid upfront. None if unknown/full payment.",
+    )
+    discount_applied: Optional[bool] = Field(
+        default=False,
+        description="True if the user explicitly mentions a discount was given.",
+    )
+    is_due: Optional[bool] = Field(
+        default=False,
+        description="True if the user explicitly mentions the remaining amount is due/credit.",
     )
 
 
@@ -66,6 +81,7 @@ class GenerateReportIntent(BaseModel):
 
 
 # Update UserIntent to include the new data type
+# MOST IMPORTANT SCHEMA OF INTENT SPECIFIER
 class UserIntent(BaseModel):
     internal_thought: str = Field(
         description="Your step-by-step reasoning about the business task. Analyze what you know and what is missing specifically (e.g., 'I have the customer name and payment, but No items yet')."
@@ -88,6 +104,13 @@ class UserIntent(BaseModel):
 
 
 # --- SESSION MANAGER ---
+"""
+ -THIS STORES THE CONTEXT FOR FURTHER CHAT FOR A SHORT TIME
+ -DONT TRY TO KNOW HOW THIS WORKS
+ -THIS WORKS USE IT
+"""
+
+
 class SessionManager:
     def __init__(self):
         self._sessions: Dict[str, UserIntent] = {}
@@ -107,20 +130,28 @@ session_manager = SessionManager()
 
 
 # --- SERVICE LOGIC ---
+"""
+ -LLM WHICH TAKES UN-ORGANIZE DATA AND GENERATES ORGANIZE DATA ACCORDING TO SCHEMA
+ -GIVES COMMAND(INTENT) TO RUN PARTICULAR COMMAND
+"""
+
+
 class IntentService:
     def __init__(self):
         self.system_instruction = (
-            "You are a sophisticated AI Business Agent for Indian merchants. Your goal is to manage the shop's ledger and inventory through natural conversation. "
             "You will receive 'Existing Memory' (current state) and 'New Voice' (new input). "
             "1. REASONING: Use 'internal_thought' to analyze the business state. Compare New Voice with Existing Memory. "
             "2. BE AGENTIC: Identify what is missing to complete the task (Customer and Items/Products are priority). "
-            "3. NO PRICE NEEDED: Do NOT ask for individual product prices if the user has provided a total amount or if they just want to record what was sold. "
+            "3. NO PRICE NEEDED: Do NOT ask for individual product prices. The system will index them from the database. "
+            "   - CRITICAL: If you have Item Name + Quantity, that is ENOUGH. Do NOT set 'missing_info' for Price or Total Amount. "
             "4. CONTEXT MERGING: Always MERGE New Voice into Existing Memory. NEVER lose existing data (like customer name, items, or payments) unless the user explicitly changes them. "
-            "5. FULL PAYMENT ASSUMPTION: If the user says to make an invoice for items/amount but DOES NOT mention how much was paid, assume they paid the FULL amount. Do NOT ask for payment details if Customer and Items are known. "
-            "6. RESPONSE: Speak naturally in the requested language. "
-            "7. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
-            "8. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, set intent_type to 'GENERATE_REPORT'."
-            "9. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name."
+            "5. DUES/CREDIT LOGIC: If the user says 'Remaining 500 is due' or 'Balance 500', and matches it with a Total, implies Paid = Total - Due. Calculate it! "
+            "   - Example: 'Total 900, remaining 500 due' -> Amount Paid = 400. set is_due=True. "
+            "6. DISCOUNT LOGIC: If the user says 'Give 100rs discount' or 'Final price is 800 (for a 900 item)', set discount_applied=True. "
+            "7. RESPONSE: Speak naturally in the requested language. "
+            "8. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
+            "9. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, set intent_type to 'GENERATE_REPORT'."
+            "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name."
         )
 
     async def parse_message(self, text, language):
@@ -137,6 +168,26 @@ class IntentService:
         )
 
         return completion.choices[0].message.parsed
+
+    """
+    DEBUGGING: JSON Structure returned by parse_message (UserIntent)
+    
+    {
+      "internal_thought": "Analysis of the user input...",
+      "intent_type": "CREATE_INVOICE" | "CHECK_STOCK" | "RECORD_PAYMENT" | "GENERATE_REPORT" | "PAYMENT_REMINDER" | "GENERAL",
+      "confidence": 0.95,
+      "data": {
+        // Depends on intent_type. Example for CREATE_INVOICE:
+        "customer_name": "John Doe",
+        "items": [
+           { "name": "Product A", "quantity": 2.0, "price": 100.0 }
+        ],
+        "amount_paid": 500.0
+      },
+      "missing_info": ["item name"] | [],
+      "response_text": "Response to the user"
+    }
+    """
 
 
 intent_service = IntentService()

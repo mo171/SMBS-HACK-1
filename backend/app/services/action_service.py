@@ -1,3 +1,16 @@
+"""
+ActionService handles core business logic for the application, specifically interacting with Supabase.
+
+Key Functions:
+- create_invoice_record: Inserts a new invoice record into the database.
+- add_invoice_items: Adds line items to an existing invoice.
+- generate_pdf: Generates a PDF invoice using FPDF.
+- upload_pdf: Uploads the generated PDF to Supabase storage.
+- get_or_create_customer: Searches for a customer by name (case-insensitive) or creates a new entry if not found.
+- execute_invoice: Orchestrates the invoice creation process, including customer resolution, total amount calculation, and database insertion.
+"""
+
+# imports
 import os
 from supabase import create_client, Client
 from io import BytesIO
@@ -6,15 +19,18 @@ import pandas as pd
 from .intent_service import CreateInvoiceIntent
 from dotenv import load_dotenv
 
+# load env variables
 load_dotenv()
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
 
 class ActionService:
+    """Handles core business logic for the application, specifically interacting with Supabase."""
+
     def __init__(self):
-        # Ensure these are in your .env file
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
-        self.supabase: Client = create_client(url, key)
+        self.supabase = supabase
 
     # --- CUSTOMER HELPERS ---
     async def get_or_create_customer(self, name: str):
@@ -34,27 +50,139 @@ class ActionService:
         return new_cust.data[0]["id"]
 
     # --- INVOICE & STOCK LOGIC (The "X") ---
+    async def calculate_potential_total(self, items):
+        """
+        Calculates the expected total amount based on DB prices.
+        Returns: { "total": float, "details": list }
+        """
+        total = 0.0
+        details = []
+
+        print(f"--- DEBUG: Calculating Potential Total for {len(items)} items ---")
+
+        for item in items:
+            # Strategy:
+            # 1. Exact Match (ilike name) - Best confidence
+            # 2. Contains Match (ilike %name%) - Good confidence
+            # 3. Fuzzy/Words Match (ilike %word%) - Fallback
+
+            clean_name = item.name.strip()
+            found_price = 0.0
+            found_name = clean_name
+            match_method = "None"
+
+            # 1. Exact-ish Match
+            res = (
+                self.supabase.table("products")
+                .select("name, base_price")
+                .ilike("name", clean_name)
+                .execute()
+            )
+
+            if res.data:
+                match_method = "Exact"
+                found_price = float(res.data[0].get("base_price", 0) or 0)
+                found_name = res.data[0]["name"]
+
+            # 2. Contains Match (if exact failed)
+            if match_method == "None":
+                res = (
+                    self.supabase.table("products")
+                    .select("name, base_price")
+                    .ilike("name", f"%{clean_name}%")
+                    .execute()
+                )
+                if res.data:
+                    match_method = "Contains"
+                    found_price = float(res.data[0].get("base_price", 0) or 0)
+                    found_name = res.data[0]["name"]
+
+            # 3. Fuzzy Words Match (if contains failed)
+            if match_method == "None":
+                words = clean_name.split()
+                if len(words) > 1:
+                    or_filter = ",".join([f"name.ilike.%{word}%" for word in words])
+                    res = (
+                        self.supabase.table("products")
+                        .select("name, base_price")
+                        .or_(or_filter)
+                        .execute()
+                    )
+                    if res.data:
+                        match_method = "Fuzzy"
+                        found_price = float(res.data[0].get("base_price", 0) or 0)
+                        found_name = res.data[0]["name"]
+
+            print(
+                f"DEBUG: Item '{clean_name}' -> Match: {match_method}, Price: {found_price}, Name: {found_name}"
+            )
+
+            line_total = found_price * item.quantity
+            total += line_total
+            details.append(
+                {
+                    "name": found_name,
+                    "original_input": item.name,
+                    "quantity": item.quantity,
+                    "unit_price": found_price,
+                    "line_total": line_total,
+                }
+            )
+
+        print(f"--- DEBUG: Total Amount Calculated: {total} ---")
+        return {"total": total, "details": details}
+
     async def execute_invoice(self, intent_data: CreateInvoiceIntent):
-        """Saves a new invoice and its line items."""
+        """Orchestrates the invoice creation process, including customer resolution, total amount calculation, and database insertion."""
         try:
             customer_id = await self.get_or_create_customer(intent_data.customer_name)
 
-            # Insert Header
-            # Logic: If item prices are missing, use amount_paid as the total_amt
-            if any(item.price is None for item in intent_data.items):
-                total_amt = intent_data.amount_paid or 0
-            else:
-                total_amt = sum(
-                    item.quantity * item.price for item in intent_data.items
-                )
+            # 1. Calculate Total Amount Logic
+            # STRATEGY:
+            # - If is_due=True: Total = Calculated(DB) or explicitly inferred from "Paid + Due" (if user said so).
+            #   But best is to rely on DB prices as the source of truth for "Total Bill".
+            # - If discount_applied=True: We accept 'amount_paid' (if present) as the Total Bill (effective price).
+            # - Default: Try DB prices.
 
+            # Get DB estimates first
+            calc_result = await self.calculate_potential_total(intent_data.items)
+            db_total = calc_result["total"]
+
+            # Decide on Final Total Amount
+            final_total_amt = 0.0
+
+            if intent_data.discount_applied and intent_data.amount_paid is not None:
+                # User says "Discount given, final price 800".
+                final_total_amt = intent_data.amount_paid
+            elif intent_data.is_due and intent_data.amount_paid is not None:
+                # User says "Paid 400, rest due". Implies Total is likely the DB Total (or user mentioned total).
+                # If DB found prices, use them.
+                if db_total > 0:
+                    final_total_amt = db_total
+                else:
+                    # Fallback: We don't know total.
+                    # Complex case. If user said "Total 900, paid 400", amount_paid=400.
+                    # We might need to assume Total = Paid + Due if we had a "amount_due" field, but we don't in CreateInvoice.
+                    # For now, default to (Paid + 0) which is wrong for Due.
+                    # Lets assume for now DB always has price or we rely on logic upstream.
+                    final_total_amt = (
+                        db_total if db_total > 0 else intent_data.amount_paid
+                    )  # Fallback
+            else:
+                # Standard Case
+                if db_total > 0:
+                    final_total_amt = db_total
+                else:
+                    final_total_amt = intent_data.amount_paid or 0
+
+            # Create Invoice Header
             inv_res = (
                 self.supabase.table("invoices")
                 .insert(
                     {
                         "customer_id": customer_id,
                         "status": "pending",
-                        "total_amount": total_amt,
+                        "total_amount": final_total_amt,
                     }
                 )
                 .execute()
@@ -62,17 +190,23 @@ class ActionService:
 
             invoice_id = inv_res.data[0]["id"]
 
-            # Insert Line Items (Triggers stock reduction automatically in DB)
+            # Insert Line Items
             line_items = []
-            for item in intent_data.items:
-                # If price is missing, and we have a total_amt, and it's a single item, use total_amt
-                # Otherwise if multiple items, we might just set unit_price to 0 or total_amt / len(items)
-                u_price = item.price
-                if u_price is None:
-                    if len(intent_data.items) == 1:
-                        u_price = total_amt / (item.quantity or 1)
-                    else:
-                        u_price = 0  # Or some other fallback
+            for i, item in enumerate(intent_data.items):
+                # Match logic with calc_result to get unit price
+                # We can try to look up key in calc_result details
+                # Simple list index match since ordered
+
+                u_price = 0.0
+                if i < len(calc_result["details"]):
+                    u_price = calc_result["details"][i]["unit_price"]
+
+                # If we applied a generic discount (Total = Paid), we need to adjust unit prices to match Total?
+                # Or just put u_price and let the sum mismatch?
+                # Better to scale unit price if discount applied.
+                if intent_data.discount_applied and db_total > 0:
+                    ratio = final_total_amt / db_total
+                    u_price = u_price * ratio
 
                 line_items.append(
                     {
@@ -88,25 +222,51 @@ class ActionService:
             # Record Payment (Full or Partial)
             amount_paid = getattr(intent_data, "amount_paid", None)
 
-            # If nothing was said about payment, assume full payment
-            if amount_paid is None:
-                amount_paid = total_amt
+            # Logic: If 'is_due' is True, use the explicit amount_paid.
+            # If 'is_due' is False and 'amount_paid' is None -> Assume Full Payment
+            if amount_paid is None and not intent_data.is_due:
+                amount_paid = final_total_amt
+            elif amount_paid is None and intent_data.is_due:
+                amount_paid = 0  # "Remaining 500 is due" -> implies X paid? Or 0 paid? usually means partial.
+                # If user said "Total 900, remaining 500 due", prompt logic says Paid=400. So we are good.
 
-            if amount_paid > 0:
+            if amount_paid and amount_paid > 0:
                 self.supabase.table("payments").insert(
                     {
                         "customer_id": customer_id,
                         "amount_received": amount_paid,
-                        "payment_mode": "Cash",  # Default
+                        "payment_mode": "Cash",
                     }
                 ).execute()
+
+            # Construct enriched items list for Frontend
+            enriched_items = []
+            for i, item in enumerate(intent_data.items):
+                u_price = 0.0
+                line_total = 0.0
+                # Try to grab from calc_result again or line_items
+                # Simplified: just grab from the 'line_items' dict we built for SQL
+                if i < len(line_items):
+                    u_price = line_items[i]["unit_price"]
+                    line_total = u_price * item.quantity
+
+                enriched_items.append(
+                    {
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "price": u_price,  # Frontend expects 'price'
+                        "total": line_total,
+                    }
+                )
 
             return {
                 "status": "success",
                 "invoice_id": invoice_id,
-                "amount": total_amt,
-                "amount_paid": amount_paid,
+                "amount": final_total_amt,
+                "amount_paid": amount_paid or 0,
+                "items": enriched_items,  # RETURN THIS!
             }
+
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -128,6 +288,7 @@ class ActionService:
 
         # 2. Fallback: Split words and find the best match
         # e.g., "pcv pipe" -> "pipe" matches "PVC Pipe"
+        # method 1 should work most of the time this is just for fallback generated by a.i
         words = product_name.split()
         if len(words) > 1:
             # Get all products that match ANY of the words
@@ -316,6 +477,7 @@ class ActionService:
     async def generate_inventory_excel(self):
         """Exports the products table to an Excel buffer, hiding empty columns."""
         res = self.supabase.table("products").select("*").execute()
+        # takes the prodcut table(thats only important) a.i generated codes convert it into excel and sends
         df = pd.DataFrame(res.data)
 
         # Drop columns that are completely null or zero across all rows
