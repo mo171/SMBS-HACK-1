@@ -1,0 +1,38 @@
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# OpenAI
+openai==1.12.0
+
+# Database
+supabase==2.3.0
+
+# Twilio for WhatsApp
+twilio==8.11.1
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Data processing
+openpyxl==3.1.2
+reportlab==4.0.9
+
+# HTTP client
+httpx==0.26.0
+
+# Pydantic for data validation
+pydantic==2.6.0
+pydantic-settings==2.1.0
+
+# LangChain (for workflow architect)
+langchain==0.1.6
+langchain-openai==0.0.5
+
+# Inngest (for workflow engine)
+inngest==0.3.0
+
+# Additional utilities
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4

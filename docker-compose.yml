@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smbs-hack-1
+    ports:
+      - "3000:3000" # Frontend
+      - "8000:8000" # Backend
+    environment:
+      # Backend environment variables
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+
+      # Frontend environment variables
+      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      # Mount .env file for development
+      - ./backend/app/.env:/app/backend/app/.env:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
