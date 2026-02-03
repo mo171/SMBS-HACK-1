@@ -152,6 +152,7 @@ class IntentService:
             "8. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
             "9. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, set intent_type to 'GENERATE_REPORT'."
             "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name."
+            "11. GLOBAL DUES: If the user asks for 'Who owes money', 'list of debtors', or 'pending payments list', set intent_type to 'PAYMENT_REMINDER' and set customer_name to 'ALL'."
         )
 
     async def parse_message(self, text, language):

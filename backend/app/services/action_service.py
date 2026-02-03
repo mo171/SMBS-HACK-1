@@ -175,6 +175,9 @@ class ActionService:
                 else:
                     final_total_amt = intent_data.amount_paid or 0
 
+            # Record amount_paid for later (Rejection logic)
+            amount_paid_val = getattr(intent_data, "amount_paid", 0.0) or 0.0
+
             # Create Invoice Header
             inv_res = (
                 self.supabase.table("invoices")
@@ -183,6 +186,7 @@ class ActionService:
                         "customer_id": customer_id,
                         "status": "pending",
                         "total_amount": final_total_amt,
+                        "amount_paid": amount_paid_val,  # NEW COLUMN
                     }
                 )
                 .execute()
@@ -238,6 +242,27 @@ class ActionService:
                         "payment_mode": "Cash",
                     }
                 ).execute()
+
+            # --- PERSISTENT DEBT SYNC ---
+            # Balance = Total - Paid
+            balance_change = float(final_total_amt) - float(amount_paid or 0)
+            if balance_change != 0:
+                # We update the customers' total_debt column
+                # Note: This is an additive update.
+                # We first get current, then add.
+                cust_data = (
+                    self.supabase.table("customers")
+                    .select("total_debt")
+                    .eq("id", customer_id)
+                    .single()
+                    .execute()
+                )
+                current_debt = float(cust_data.data.get("total_debt") or 0)
+                new_debt = current_debt + balance_change
+                self.supabase.table("customers").update({"total_debt": new_debt}).eq(
+                    "id", customer_id
+                ).execute()
+                print(f"DEBUG: Updated Customer Debt: {current_debt} -> {new_debt}")
 
             # Construct enriched items list for Frontend
             enriched_items = []
@@ -325,6 +350,24 @@ class ActionService:
                 .insert({"customer_id": customer_id, "amount_received": amount})
                 .execute()
             )
+
+            # --- PERSISTENT DEBT SYNC ---
+            cust_data = (
+                self.supabase.table("customers")
+                .select("total_debt")
+                .eq("id", customer_id)
+                .single()
+                .execute()
+            )
+            current_debt = float(cust_data.data.get("total_debt") or 0)
+            new_debt = current_debt - float(amount)
+            self.supabase.table("customers").update({"total_debt": new_debt}).eq(
+                "id", customer_id
+            ).execute()
+            print(
+                f"DEBUG: Payment Recorded. Updated Debt: {current_debt} -> {new_debt}"
+            )
+
             return {"status": "success", "data": res.data[0]}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -603,6 +646,46 @@ class ActionService:
                 "total_billed": total_x,
                 "total_paid": total_y,
                 "balance_due": total_x - total_y,
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def get_all_debtors(self):
+        """Returns a list of all customers who owe money (> 0)."""
+        try:
+            res = (
+                self.supabase.table("customers")
+                .select("full_name, total_debt")
+                .gt("total_debt", 0)
+                .order("total_debt", desc=True)
+                .execute()
+            )
+            return {"status": "success", "data": res.data}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def get_overall_ledger(self):
+        """Calculates overall business totals: Total Billed, Total Paid, Balance Due."""
+        try:
+            # Sum ALL Invoices
+            inv_data = self.supabase.table("invoices").select("total_amount").execute()
+            total_billed = sum(
+                float(row.get("total_amount") or 0) for row in inv_data.data
+            )
+
+            # Sum ALL Payments
+            pay_data = (
+                self.supabase.table("payments").select("amount_received").execute()
+            )
+            total_paid = sum(
+                float(row.get("amount_received") or 0) for row in pay_data.data
+            )
+
+            return {
+                "status": "success",
+                "total_billed": total_billed,
+                "total_paid": total_paid,
+                "balance_due": total_billed - total_paid,
             }
         except Exception as e:
             return {"status": "error", "message": str(e)}

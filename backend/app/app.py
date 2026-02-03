@@ -250,17 +250,42 @@ async def intent_parser(
                 reply = f"Report generated successfully. Download here: {download_url}"
 
             elif result.intent_type == "PAYMENT_REMINDER":
-                ledger = await action_service.get_customer_ledger(
-                    result.data.customer_name
-                )
-                if ledger.get("status") == "error":
-                    raise Exception(
-                        ledger.get("message", "Unknown error fetching ledger")
-                    )
+                if result.data.customer_name.upper() == "ALL":
+                    debtors = await action_service.get_all_debtors()
+                    if debtors.get("status") == "error":
+                        raise Exception(
+                            debtors.get("message", "Error fetching debtors")
+                        )
 
-                reply = (
-                    f"{ledger['customer']} owes a balance of {ledger['balance_due']}."
-                )
+                    # Also get overall business totals for the Outstanding Balance card
+                    ledger = await action_service.get_overall_ledger()
+                    if ledger.get("status") == "error":
+                        raise Exception(
+                            ledger.get("message", "Error fetching overall ledger")
+                        )
+
+                    if not debtors["data"]:
+                        reply = "Great news! No one owes you any money right now."
+                    else:
+                        debt_list = "\n".join(
+                            [
+                                f"- {d['full_name']}: Rs. {d['total_debt']}"
+                                for d in debtors["data"]
+                            ]
+                        )
+                        reply = (
+                            f"Here is the list of people who owe money:\n{debt_list}"
+                        )
+                else:
+                    ledger = await action_service.get_customer_ledger(
+                        result.data.customer_name
+                    )
+                    if ledger.get("status") == "error":
+                        raise Exception(
+                            ledger.get("message", "Unknown error fetching ledger")
+                        )
+
+                    reply = f"{ledger['customer']} owes a balance of {ledger['balance_due']}."
 
             else:
                 reply = result.response_text
@@ -305,6 +330,17 @@ async def intent_parser(
             if result.intent_type == "CHECK_STOCK" and "stock_data" in locals():
                 if final_response["analysis"].get("data"):
                     final_response["analysis"]["data"].update(stock_data)
+
+            # INJECT LEDGER DATA IF PRESENT (for PAYMENT_REMINDER)
+            if result.intent_type == "PAYMENT_REMINDER":
+                if "ledger" in locals() and final_response["analysis"].get("data"):
+                    # Inject ledger totals (works for both single customer and ALL)
+                    final_response["analysis"]["data"].update(ledger)
+                if "debtors" in locals() and final_response["analysis"].get("data"):
+                    # All debtors list
+                    final_response["analysis"]["data"]["debtors"] = debtors.get(
+                        "data", []
+                    )
 
             # RETURN THE FINAL RESPONSE
             # DEBUGGING: JSON Response for Success
@@ -361,14 +397,47 @@ async def delete_invoice(invoice_id: str):
 
         print(f"--- Deleting Invoice: {invoice_id} ---")
 
-        # FIX: Manually delete invoice_items first to avoid FK constraint violation
-        # (Assuming 'invoice_items' has a FK to 'invoices.id')
+        # 1. Fetch Invoice Details to reverse the debt!
+        inv_data = getattr(
+            supabase.table("invoices")
+            .select("customer_id, total_amount, amount_paid")
+            .eq("id", invoice_id)
+            .single(),
+            "execute",
+        )()
+        if inv_data.data:
+            cust_id = inv_data.data["customer_id"]
+            tot = float(inv_data.data["total_amount"] or 0)
+            paid = float(inv_data.data["amount_paid"] or 0)
+            due_to_reverse = tot - paid
+
+            # Subtract from customer total_debt
+            if due_to_reverse != 0:
+                cust_res = getattr(
+                    supabase.table("customers")
+                    .select("total_debt")
+                    .eq("id", cust_id)
+                    .single(),
+                    "execute",
+                )()
+                curr_debt = float(cust_res.data.get("total_debt") or 0)
+                getattr(
+                    supabase.table("customers")
+                    .update({"total_debt": curr_debt - due_to_reverse})
+                    .eq("id", cust_id),
+                    "execute",
+                )()
+                print(
+                    f"DEBUG: Reversed Debt for {cust_id}: {curr_debt} -> {curr_debt - due_to_reverse}"
+                )
+
+        # 2. Manually delete invoice_items
         getattr(
             supabase.table("invoice_items").delete().eq("invoice_id", invoice_id),
             "execute",
         )()
 
-        # Now delete the invoice
+        # 3. Now delete the invoice
         res = getattr(
             supabase.table("invoices").delete().eq("id", invoice_id), "execute"
         )()
