@@ -1,18 +1,18 @@
-from inngest import Inngest, Step
+from inngest import Inngest, TriggerEvent
 from integrations import TOOL_REGISTRY
 from lib.variable_resolver import resolve_variables
 from datetime import datetime
 from lib.supabase_lib import supabase
 
-# 1. Initialize Inngest
-inngest_client = Inngest(app_id="biz_flow_engine")
+# 1. Initialize Inngest for development mode
+inngest_client = Inngest(app_id="biz_flow_engine", is_production=False)
 
 
 @inngest_client.create_function(
     fn_id="execute_business_workflow",
-    trigger="workflow/run_requested",
+    trigger=TriggerEvent(event="workflow/run_requested"),
 )
-async def execute_workflow(ctx, step: Step):
+async def execute_workflow(ctx):
     print("\n" + "=" * 80)
     print("🚀 [WorkflowEngine] execute_workflow function called")
     print(f"🆔 [WorkflowEngine] Run ID: {ctx.run_id}")
@@ -28,7 +28,7 @@ async def execute_workflow(ctx, step: Step):
 
     # 1. LOG START: Create the entry in Supabase
     print("💾 [WorkflowEngine] Creating workflow_logs entry in Supabase")
-    log_entry = await step.run(
+    log_entry = await ctx.step.run(
         "initialize_log",
         lambda: supabase.table("workflow_logs")
         .insert(
@@ -59,7 +59,7 @@ async def execute_workflow(ctx, step: Step):
             print(f"⏳ [WorkflowEngine] Marking node {node_id} as running")
             print(f"📊 [WorkflowEngine] Current node_states: {node_states}")
 
-            await step.run(
+            await ctx.step.run(
                 f"mark_running_{node_id}",
                 lambda ns=node_states.copy(): supabase.table("workflow_logs")
                 .update({"step_results": ns})
@@ -71,7 +71,7 @@ async def execute_workflow(ctx, step: Step):
             # Execute the node action
             try:
                 print(f"🚀 [WorkflowEngine] Executing action for node {node_id}")
-                action_result = await step.run(
+                action_result = await ctx.step.run(
                     f"execute_{node_id}", lambda: perform_action(node["data"], results)
                 )
                 print(
@@ -105,7 +105,7 @@ async def execute_workflow(ctx, step: Step):
 
             # Update log with current node state
             print(f"💾 [WorkflowEngine] Updating workflow_logs for node {node_id}")
-            await step.run(
+            await ctx.step.run(
                 f"update_log_{node_id}",
                 lambda ns=node_states.copy(): supabase.table("workflow_logs")
                 .update({"step_results": ns})
@@ -118,7 +118,7 @@ async def execute_workflow(ctx, step: Step):
         print(f"\n{'-' * 60}")
         print("✅ [WorkflowEngine] All nodes completed successfully")
         print("💾 [WorkflowEngine] Finalizing workflow log")
-        await step.run(
+        await ctx.step.run(
             "finalize_log",
             lambda: supabase.table("workflow_logs")
             .update({"status": "completed", "completed_at": datetime.now().isoformat()})
@@ -136,7 +136,7 @@ async def execute_workflow(ctx, step: Step):
 
         # 4. LOG FAILURE
         print("💾 [WorkflowEngine] Logging failure to Supabase")
-        await step.run(
+        await ctx.step.run(
             "log_failure",
             lambda: supabase.table("workflow_logs")
             .update({"status": "failed", "error_message": str(e)})

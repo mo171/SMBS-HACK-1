@@ -52,7 +52,9 @@ from lib.twilio_config import verify_twilio
 from fastapi.responses import Response
 from twilio.twiml.messaging_response import MessagingResponse
 from agents.architect import WorkflowArchitect
-from workflows.engine import inngest_client
+from workflows.engine import inngest_client, execute_workflow
+from inngest import Event
+from inngest.fast_api import serve
 from fastapi import Request
 from workflows.schema import WorkflowBlueprint
 from lib.supabase_lib import get_active_workflows_by_trigger
@@ -654,11 +656,13 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
     # Send event to Inngest to start the workflow
     print("📡 [/workflow/execute] Sending event to Inngest")
     await inngest_client.send(
-        "workflow/run_requested",
-        data={
-            "blueprint": blueprint.dict(),
-            "payload": payload or {},
-        },
+        Event(
+            name="workflow/run_requested",
+            data={
+                "blueprint": blueprint.model_dump(mode="json"),
+                "payload": payload or {},
+            },
+        )
     )
     print("✅ [/workflow/execute] Event sent to Inngest")
     print("=" * 60 + "\n")
@@ -808,3 +812,7 @@ async def webhook_dispatcher(service_name: str, request: Request):
         )
 
     return {"status": "dispatched", "count": len(blueprints)}
+
+
+# Serve Inngest functions properly
+serve(app, inngest_client, [execute_workflow])

@@ -31,7 +31,7 @@ langchain==0.1.6
 langchain-openai==0.0.5
 
 # Inngest (for workflow engine)
-inngest==0.3.0
+inngest==0.5.15
 
 # Additional utilities
 python-jose[cryptography]==3.3.0
