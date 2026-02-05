@@ -3,6 +3,7 @@ node_modules/
 .next/
 .env.local
 .env 
+.json
 
 # Backend
 __pycache__/
