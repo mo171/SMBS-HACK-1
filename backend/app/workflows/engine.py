@@ -30,16 +30,19 @@ async def execute_workflow(ctx):
     print("💾 [WorkflowEngine] Creating workflow_logs entry in Supabase")
     log_entry = await ctx.step.run(
         "initialize_log",
-        lambda: supabase.table("workflow_logs")
-        .insert(
-            {
-                "workflow_id": workflow_id,
-                "run_id": ctx.run_id,
-                "status": "running",
-                "trigger_data": event_payload,
-            }
-        )
-        .execute(),
+        lambda: (
+            supabase.table("workflow_logs")
+            .insert(
+                {
+                    "workflow_id": workflow_id,
+                    "run_id": ctx.run_id,
+                    "status": "running",
+                    "trigger_data": event_payload,
+                }
+            )
+            .execute()
+            .data
+        ),
     )
     print(f"✅ [WorkflowEngine] Workflow log initialized: {log_entry}")
 
@@ -61,10 +64,13 @@ async def execute_workflow(ctx):
 
             await ctx.step.run(
                 f"mark_running_{node_id}",
-                lambda ns=node_states.copy(): supabase.table("workflow_logs")
-                .update({"step_results": ns})
-                .eq("run_id", ctx.run_id)
-                .execute(),
+                lambda ns=node_states.copy(): (
+                    supabase.table("workflow_logs")
+                    .update({"step_results": ns})
+                    .eq("run_id", ctx.run_id)
+                    .execute()
+                    .data
+                ),
             )
             print(f"✅ [WorkflowEngine] Node {node_id} marked as running in Supabase")
 
@@ -77,6 +83,16 @@ async def execute_workflow(ctx):
                 print(
                     f"✅ [WorkflowEngine] Action result for node {node_id}: {action_result}"
                 )
+
+                # CRITICAL: If the tool returned an error status, we MUST raise an exception
+                # so Inngest knows this step actually failed.
+                if (
+                    isinstance(action_result, dict)
+                    and action_result.get("status") == "error"
+                ):
+                    error_msg = action_result.get("message", "Unknown tool error")
+                    print(f"❌ [WorkflowEngine] Action reported error: {error_msg}")
+                    raise ValueError(f"Node {node_id} failed: {error_msg}")
 
                 # Store the result
                 results[node_id] = action_result
@@ -107,10 +123,13 @@ async def execute_workflow(ctx):
             print(f"💾 [WorkflowEngine] Updating workflow_logs for node {node_id}")
             await ctx.step.run(
                 f"update_log_{node_id}",
-                lambda ns=node_states.copy(): supabase.table("workflow_logs")
-                .update({"step_results": ns})
-                .eq("run_id", ctx.run_id)
-                .execute(),
+                lambda ns=node_states.copy(): (
+                    supabase.table("workflow_logs")
+                    .update({"step_results": ns})
+                    .eq("run_id", ctx.run_id)
+                    .execute()
+                    .data
+                ),
             )
             print(f"✅ [WorkflowEngine] Workflow log updated for node {node_id}")
 
@@ -120,10 +139,15 @@ async def execute_workflow(ctx):
         print("💾 [WorkflowEngine] Finalizing workflow log")
         await ctx.step.run(
             "finalize_log",
-            lambda: supabase.table("workflow_logs")
-            .update({"status": "completed", "completed_at": datetime.now().isoformat()})
-            .eq("run_id", ctx.run_id)
-            .execute(),
+            lambda: (
+                supabase.table("workflow_logs")
+                .update(
+                    {"status": "completed", "completed_at": datetime.now().isoformat()}
+                )
+                .eq("run_id", ctx.run_id)
+                .execute()
+                .data
+            ),
         )
         print("✅ [WorkflowEngine] Workflow completed successfully")
         print("=" * 80 + "\n")
@@ -138,10 +162,13 @@ async def execute_workflow(ctx):
         print("💾 [WorkflowEngine] Logging failure to Supabase")
         await ctx.step.run(
             "log_failure",
-            lambda: supabase.table("workflow_logs")
-            .update({"status": "failed", "error_message": str(e)})
-            .eq("run_id", ctx.run_id)
-            .execute(),
+            lambda: (
+                supabase.table("workflow_logs")
+                .update({"status": "failed", "error_message": str(e)})
+                .eq("run_id", ctx.run_id)
+                .execute()
+                .data
+            ),
         )
         print("=" * 80 + "\n")
         raise e
@@ -165,20 +192,21 @@ async def perform_action(action_data, context_data):
     print(f"📦 [perform_action] Raw params: {raw_params}")
 
     # 1. Resolve variables against the current state
-    print("🔍 [perform_action] Resolving variables")
+    print(f"🔍 [perform_action] Resolving variables in raw_params: {raw_params}")
     resolved_params = {
         k: resolve_variables(v, context_data) if isinstance(v, str) else v
         for k, v in raw_params.items()
     }
-    print(f"✅ [perform_action] Resolved params: {resolved_params}")
+    print(f"✅ [perform_action] Resolved params result: {resolved_params}")
 
     # 2. Lookup the tool in the registry
     print(f"🔍 [perform_action] Looking up tool '{service}' in registry")
     tool = TOOL_REGISTRY.get(service)
 
     if not tool:
-        error_msg = f"Service '{service}' is not integrated."
+        error_msg = f"Service '{service}' is not integrated. (Received: {service})"
         print(f"❌ [perform_action] {error_msg}")
+        print(f"🛠️ [perform_action] Available tools: {list(TOOL_REGISTRY.keys())}")
         print(f"{'~' * 60}\n")
         return {"status": "error", "message": error_msg}
 

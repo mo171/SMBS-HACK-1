@@ -1,3 +1,21 @@
+"""
+This module defines the WorkflowArchitect agent, which acts as a bridge between natural 
+language user requirements and a structured execution graph.
+
+Functionality:
+- Translates high-level business logic (e.g., "Send a WhatsApp message after a Razorpay payment") 
+  into a directed graph of automation nodes.
+- Utilizes GPT-4o via LangChain's structured output (function calling) to ensure 
+  the generated JSON conforms strictly to the `WorkflowBlueprint` schema.
+- Automatically handles variable injection and data mapping between services like 
+  Razorpay, WhatsApp, Google Sheets, and Timers.
+
+Output:
+- A `WorkflowBlueprint` instance containing the validated sequence of nodes and their logical connections.
+ 
+"""
+
+
 from langchain_openai import ChatOpenAI
 from workflows.schema import WorkflowBlueprint
 
@@ -44,8 +62,6 @@ class WorkflowArchitect:
             "Set realistic positions with proper spacing (x: 100, 200, 300... y: 100, 200, 300...). "
             "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1'."
         )
-
-        print(f"💬 [WorkflowArchitect] System message: {system_msg[:200]}...")
         print("🔮 [WorkflowArchitect] Invoking LLM with structured output")
 
         try:

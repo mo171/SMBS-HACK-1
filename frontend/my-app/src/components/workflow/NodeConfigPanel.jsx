@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { X, Info } from "lucide-react";
+import toast from "react-hot-toast";
 import useWorkflowStore from "@/store/workflowStore";
 
 export default function NodeConfigPanel() {
@@ -22,6 +23,7 @@ export default function NodeConfigPanel() {
 
   const onSubmit = (data) => {
     updateNodeData(selectedNode.id, data);
+    toast.success("Configuration saved!");
   };
 
   // Auto-save on change (debounced to prevent infinite loops)
@@ -97,7 +99,9 @@ export default function NodeConfigPanel() {
               )}
               {isRazorpay && (
                 <>
-                  <option value="create_payment_link">Create Payment Link</option>
+                  <option value="create_payment_link">
+                    Create Payment Link
+                  </option>
                   <option value="create_order">Create Order</option>
                   <option value="capture_payment">Capture Payment</option>
                 </>
@@ -120,7 +124,7 @@ export default function NodeConfigPanel() {
                   Phone Number
                 </label>
                 <input
-                  {...register("params.phoneNumber")}
+                  {...register("params.phone")}
                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
                   placeholder="+1234567890"
                 />
@@ -237,7 +241,8 @@ export default function NodeConfigPanel() {
                     Payment Link
                   </p>
                   <p className="text-[10px] text-blue-300/70 leading-relaxed">
-                    Creates a secure payment link that can be shared with customers via WhatsApp or email.
+                    Creates a secure payment link that can be shared with
+                    customers via WhatsApp or email.
                   </p>
                 </div>
               </div>
@@ -274,7 +279,7 @@ export default function NodeConfigPanel() {
                   Values (JSON)
                 </label>
                 <textarea
-                  {...register("params.values")}
+                  {...register("params.row_data")}
                   rows={4}
                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all resize-none font-mono"
                   placeholder='[["Name", "Email"], ["{{trigger_data.name}}", "{{trigger_data.email}}"]]'
@@ -288,7 +293,8 @@ export default function NodeConfigPanel() {
                     Google Sheets Integration
                   </p>
                   <p className="text-[10px] text-green-300/70 leading-relaxed">
-                    Make sure your Google Sheets API is configured and the spreadsheet is accessible.
+                    Make sure your Google Sheets API is configured and the
+                    spreadsheet is accessible.
                   </p>
                 </div>
               </div>

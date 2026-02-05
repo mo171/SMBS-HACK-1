@@ -37,7 +37,6 @@ intent analysis, and action execution.
 - docs: Contains the documentation for the application.
 
 """
-
 # imports
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,8 +80,6 @@ Core Logic:
 4. Action Execution(valuable_info-->action): Triggers the `action_service` to perform specific business operations (e.g., database updates, external API calls) based on the identified intent.
 5. Multi-lingual Support:
 """
-
-
 @app.post("/intent-parser")
 async def intent_parser(
     audio_file: UploadFile = File(
@@ -488,7 +485,7 @@ async def export_invoice_excel(invoice_id: str):
         },
     )
 
-
+# whatsapp webhook (uses twilio & intent-parser logic)
 @app.post("/whatsapp")
 async def whatsapp_webhook(
     Body: str = Form(...), From: str = Form(...), _=Depends(verify_twilio)
@@ -593,12 +590,24 @@ async def whatsapp_webhook(
     return Response(content=str(resp), media_type="application/xml")
 
 
-architect = WorkflowArchitect()
 
+
+# ---------------------------------------------------------------------> WORKFLOW AUTOMATION <---------------------------------------------------
+architect = WorkflowArchitect()
+ 
 
 @app.post("/workflow/draft")
-async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
-    print("\n" + "=" * 60)
+async def create_draft(prompt: str = Query(...) , user_id: str = Query(...)): # query means (jo url ke through info ata hia ?)
+    """
+    This endpoint converts a natural language prompt into a structured workflow blueprint (nodes and edges) 
+    using an AI architect. The resulting draft is persisted in the database for user review.
+
+    Frontend Impact:
+    1. The frontend will receive a confirmation of the saved draft.
+    2. It should then fetch this blueprint from the 'workflow_blueprints' table using the user_id.
+    3. The UI (e.g., a React Flow canvas) will render the generated nodes and edges, allowing the 
+       user to visually inspect, edit, and eventually activate the workflow.
+    """
     print("🚀 [/workflow/draft] Endpoint hit")
     print(f"📝 [/workflow/draft] Prompt received: {prompt}")
     print(f"👤 [/workflow/draft] User ID: {user_id}")
@@ -606,7 +615,6 @@ async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
     # 1. Ask LangChain to build the JSON
     print("🤖 [/workflow/draft] Calling architect.draft_workflow()")
     blueprint_obj = await architect.draft_workflow(prompt)
-    print(f"✅ [/workflow/draft] Blueprint object generated: {type(blueprint_obj)}")
 
     # 2. Convert the Pydantic/LangChain object to a plain Python Dictionary
     blueprint_json = blueprint_obj.model_dump()
@@ -631,9 +639,6 @@ async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
     )
 
     workflow_id = result.data[0]["id"]
-    print(f"✅ [/workflow/draft] Workflow saved with ID: {workflow_id}")
-    print("=" * 60 + "\n")
-
     return {"status": "success", "workflow_id": workflow_id}
 
 
@@ -669,22 +674,7 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
 
     return {"status": "success", "run_id": run_id}
 
-
-@app.post("/webhooks/razorpay")
-async def razorpay_webhook(request: Request):
-    payload = await request.json()
-
-    # 1. Find the active blueprint in Supabase that matches this trigger
-    # (Select from workflow_blueprints where trigger_service = 'razorpay')
-    blueprint = {"nodes": [...], "edges": [...]}
-
-    # 2. Tell Inngest to start the engine
-    await inngest_client.send(
-        "workflow/run_requested", data={"blueprint": blueprint, "payload": payload}
-    )
-
-    return {"status": "accepted"}
-
+# ---------------------------------------------------------------------> CORE WORKFLOW  ENDS ABOVE THIS LINE <---------------------------------------------------
 
 @app.get("/workflows")
 async def list_workflows(user_id: str = Query(...)):
@@ -792,6 +782,21 @@ async def save_workflow(
 
 @app.post("/webhooks/{service_name}")
 async def webhook_dispatcher(service_name: str, request: Request):
+    """
+    A generic entry point for all external service webhooks (e.g., Razorpay, Instagram, Shopify).
+
+    How it works:
+    1. Captures the 'service_name' from the URL path and the JSON payload from the request body.
+    2. Queries the database for all active workflow blueprints where the trigger node matches the service name.
+    3. For each matching workflow, it dispatches an asynchronous event to the Inngest engine.
+    4. The Inngest engine then executes the workflow steps (nodes) using the webhook data as the initial context.
+
+    Importance:
+    This dispatcher decouples external event sources from internal workflow logic. It allows users to 
+    create new automated responses to external events entirely through the UI without requiring 
+    backend code changes for every new webhook integration.
+    """
+
     # 1. Capture the data sent by the service (Razorpay/Instagram)
     payload = await request.json()
 
