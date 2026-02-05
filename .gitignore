@@ -14,3 +14,4 @@ venv/
 
 # OS
 .DS_Store
+backend/app/integrations/service_account.json
