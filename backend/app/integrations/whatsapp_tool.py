@@ -1,13 +1,14 @@
 import os
-import asyncio
 from datetime import datetime
 from twilio.rest import Client
 from .base import BaseTool
 
 # Default values if frontend doesn't provide them
-DEFAULT_FALLBACK_PHONE = "9867020608"
+DEFAULT_FALLBACK_PHONE = os.getenv("DEFAULT_WHATSAPP_PHONE", "9867020608")
 DEFAULT_FALLBACK_MESSAGE = "Hi! This is an automated message from your workflow. Some configuration was missing, so this default was sent."
-DEFAULT_SPREADSHEET_ID = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+DEFAULT_SPREADSHEET_ID = os.getenv(
+    "DEFAULT_SPREADSHEET_ID", "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+)
 
 
 class WhatsAppTool(BaseTool):
@@ -125,7 +126,7 @@ class WhatsAppTool(BaseTool):
             fallback_reason.append("phone_missing")
 
         if not body:
-            print(f"⚠️ [WhatsAppTool] Missing message body. Using fallback.")
+            print("⚠️ [WhatsAppTool] Missing message body. Using fallback.")
             body = DEFAULT_FALLBACK_MESSAGE
             fallback_used = True
             fallback_reason.append("body_missing")
