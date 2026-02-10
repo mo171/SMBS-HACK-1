@@ -593,20 +593,46 @@ async def whatsapp_webhook(
 
 
 # ---------------------------------------------------------------------> WORKFLOW AUTOMATION <---------------------------------------------------
+"""
+WORKFLOW AUTOMATION ENGINE OVERVIEW
+-----------------------------------
+This section handles the dynamic creation, management, and execution of business workflows.
+It utilizes three core technologies:
+1. LangChain / OpenAI: For the 'WorkflowArchitect' which turns natural language into JSON blueprints.
+2. Supabase: For persisting blueprints (`workflow_blueprints`) and execution logs.
+3. Inngest: A serverless queue/engine that handles the actual step-by-step execution and retries.
+
+DB Structure (Supabase - workflow_blueprints):
+- id (uuid): Primary Key.
+- user_id (text): Links the workflow to a specific user.
+- name (text): Human-readable name (e.g., "AI Draft: Invoice notification").
+- nodes (jsonb): Array of React Flow compatible node objects (id, type, data, position).
+- edges (jsonb): Array of React Flow compatible edge objects (id, source, target).
+- is_active (bool): Whether the workflow is currently ready for execution.
+"""
 architect = WorkflowArchitect()
- 
 
+
+#fully working
 @app.post("/workflow/draft")
-async def create_draft(prompt: str = Query(...) , user_id: str = Query(...)): # query means (jo url ke through info ata hia ?)
+async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
     """
-    This endpoint converts a natural language prompt into a structured workflow blueprint (nodes and edges) 
-    using an AI architect. The resulting draft is persisted in the database for user review.
-
-    Frontend Impact:
-    1. The frontend will receive a confirmation of the saved draft.
-    2. It should then fetch this blueprint from the 'workflow_blueprints' table using the user_id.
-    3. The UI (e.g., a React Flow canvas) will render the generated nodes and edges, allowing the 
-       user to visually inspect, edit, and eventually activate the workflow.
+    PURPOSE: Converts a user's natural language wish into a structured graph theory (Nodes/Edges).
+    
+    RECEIVES:
+    - prompt (str): The raw text from the user (e.g., "When I get an order, send a WhatsApp").
+    - user_id (str): The owner of this workflow.
+    
+    LOGIC:
+    1. Pass the prompt to `WorkflowArchitect`.
+    2. Architect uses LLM + Tool calling to generate a valid JSON blueprint (nodes/edges).
+    3. The blueprint is saved to 'workflow_blueprints' with `is_active=False`.
+    
+    RETURNS:
+    - workflow_id: The ID of the newly created draft.
+    
+    FRONTEND IMPACT:
+    The frontend should redirect to the Canvas and load this ID to let the user "see" their automation.
     """
     print("🚀 [/workflow/draft] Endpoint hit")
     print(f"📝 [/workflow/draft] Prompt received: {prompt}")
@@ -619,8 +645,6 @@ async def create_draft(prompt: str = Query(...) , user_id: str = Query(...)): # 
     # 2. Convert the Pydantic/LangChain object to a plain Python Dictionary
     blueprint_json = blueprint_obj.model_dump()
     print(f"📊 [/workflow/draft] Blueprint JSON: {blueprint_json}")
-    print(f"📊 [/workflow/draft] Nodes count: {len(blueprint_json.get('nodes', []))}")
-    print(f"🔗 [/workflow/draft] Edges count: {len(blueprint_json.get('edges', []))}")
 
     # 3. Save it to Supabase so the Frontend can load it
     print("💾 [/workflow/draft] Inserting into Supabase workflow_blueprints table")
@@ -645,20 +669,30 @@ async def create_draft(prompt: str = Query(...) , user_id: str = Query(...)): # 
 @app.post("/workflow/execute")
 async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict = None):
     """
-    Execute a workflow from the frontend and return run_id for monitoring.
+    PURPOSE: Manually triggers a specific workflow execution.
+    
+    RECEIVES:
+    - blueprint (WorkflowBlueprint): The full graph (nodes/edges) representing the code to run.
+    - payload (dict): Optional external data (like an order object) to inject into the workflow.
+    
+    LOGIC:
+    1. Generates a unique `run_id` for tracking.
+    2. Packages the blueprint and payload into an Inngest Event.
+    3. Handoff: `inngest_client.send` puts this on a queue. The `execute_workflow` function 
+       in Python then takes over asynchronously.
+    
+    RETURNS:
+    - run_id: Used for monitoring progress in real-time.
     """
     print("\n" + "=" * 60)
     print("▶️ [/workflow/execute] Endpoint hit")
-    print(f"📊 [/workflow/execute] Blueprint received: {blueprint}")
-    print(f"📦 [/workflow/execute] Payload: {payload}")
 
-    # Generate a unique run_id for this execution
     import uuid
-
     run_id = str(uuid.uuid4())
     print(f"🆔 [/workflow/execute] Generated run_id: {run_id}")
 
     # Send event to Inngest to start the workflow
+    # This triggers the 'execute_workflow' logic in backend/app/workflows/engine.py
     print("📡 [/workflow/execute] Sending event to Inngest")
     await inngest_client.send(
         Event(
@@ -674,11 +708,16 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
 
     return {"status": "success", "run_id": run_id}
 
-# ---------------------------------------------------------------------> CORE WORKFLOW  ENDS ABOVE THIS LINE <---------------------------------------------------
+# ---------------------------------------------------------------------> CORE WORKFLOW ENDS ABOVE <---------------------------------------------------
 
 @app.get("/workflows")
 async def list_workflows(user_id: str = Query(...)):
-    """List all workflows for a user"""
+    """
+    PURPOSE: Fetches all workflows saved by a specific user.
+    RECEIVES: user_id (str)
+    LOGIC: Queries 'workflow_blueprints' table filter by 'user_id'.
+    RETURNS: List of workflow objects.
+    """
     print(f"\n📋 [/workflows] Listing workflows for user: {user_id}")
 
     try:
@@ -690,22 +729,20 @@ async def list_workflows(user_id: str = Query(...)):
             .execute()
         )
 
-        workflows = result.data
-        print(f"✅ [/workflows] Found {len(workflows)} workflows")
-
-        return {"status": "success", "workflows": workflows}
+        return {"status": "success", "workflows": result.data}
 
     except Exception as e:
-        error_msg = f"Failed to fetch workflows: {str(e)}"
-        print(f"❌ [/workflows] {error_msg}")
-        raise HTTPException(500, error_msg)
+        raise HTTPException(500, f"Failed to fetch workflows: {str(e)}")
 
 
 @app.get("/workflows/{workflow_id}")
 async def get_workflow(workflow_id: str, user_id: str = Query(...)):
-    """Get specific workflow details"""
-    print(f"\n🔍 [/workflows/{workflow_id}] Fetching workflow for user: {user_id}")
-
+    """
+    PURPOSE: Loads a single workflow's full blueprint (nodes/edges).
+    RECEIVES: workflow_id (path), user_id (query)
+    LOGIC: Primary key lookup in 'workflow_blueprints'.
+    RETURNS: The single workflow object.
+    """
     try:
         result = (
             supabase.table("workflow_blueprints")
@@ -716,40 +753,40 @@ async def get_workflow(workflow_id: str, user_id: str = Query(...)):
             .execute()
         )
 
-        workflow = result.data
-        print(f"✅ [/workflows/{workflow_id}] Workflow found: {workflow['name']}")
-
-        return {"status": "success", "workflow": workflow}
+        return {"status": "success", "workflow": result.data}
 
     except Exception as e:
-        error_msg = f"Failed to fetch workflow: {str(e)}"
-        print(f"❌ [/workflows/{workflow_id}] {error_msg}")
-        raise HTTPException(500, error_msg)
+        raise HTTPException(500, f"Failed to fetch workflow: {str(e)}")
 
 
-# In backend/app.py
 @app.post("/workflow/save")
 async def save_workflow(
     blueprint: WorkflowBlueprint,
     user_id: str = Query(...),
     workflow_name: str = Query(...),
 ):
-    print("\n" + "=" * 60)
-    print("💾 [/workflow/save] Endpoint hit")
-    print(f"👤 [/workflow/save] User ID: {user_id}")
-    print(f"📝 [/workflow/save] Workflow name: {workflow_name}")
-    print(f"📊 [/workflow/save] Blueprint: {blueprint}")
+    """
+    PURPOSE: Finalizes a draft or updates an existing workflow to be 'Active'.
+    
+    RECEIVES:
+    - blueprint: Modified nodes/edges from the Frontend Canvas.
+    - user_id: Owner ID.
+    - workflow_name: What to call this automation.
+    
+    LOGIC:
+    1. Validation: Ensures the workflow actually has logic (nodes).
+    2. Storage: Inserts or Updates the record in Supabase with `is_active=True`.
+    
+    RETURNS: The newly inserted/updated database record ID.
+    """
+    print("� [/workflow/save] Saving workflow...")
 
     try:
         # Validate blueprint
         if not blueprint.nodes:
-            print("❌ [/workflow/save] No nodes in blueprint")
             raise HTTPException(400, "Workflow must have at least one node")
 
-        print(f"📊 [/workflow/save] Nodes count: {len(blueprint.nodes)}")
-        print(f"🔗 [/workflow/save] Edges count: {len(blueprint.edges)}")
-
-        # Convert blueprint to dict for storage
+        # Convert pydantic models to dict for JSONB storage
         blueprint_data = {
             "user_id": user_id,
             "name": workflow_name,
@@ -758,12 +795,8 @@ async def save_workflow(
             "is_active": True,
         }
 
-        print("💾 [/workflow/save] Inserting into Supabase")
         result = supabase.table("workflow_blueprints").insert(blueprint_data).execute()
-
         workflow_id = result.data[0]["id"]
-        print(f"✅ [/workflow/save] Workflow saved with ID: {workflow_id}")
-        print("=" * 60 + "\n")
 
         return {
             "status": "success",
@@ -771,36 +804,36 @@ async def save_workflow(
             "message": "Workflow saved successfully!",
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        error_msg = f"Failed to save workflow: {str(e)}"
-        print(f"❌ [/workflow/save] {error_msg}")
-        print("=" * 60 + "\n")
-        raise HTTPException(500, error_msg)
+        raise HTTPException(500, f"Failed to save workflow: {str(e)}")
 
 
 @app.post("/webhooks/{service_name}")
 async def webhook_dispatcher(service_name: str, request: Request):
     """
-    A generic entry point for all external service webhooks (e.g., Razorpay, Instagram, Shopify).
-
-    How it works:
-    1. Captures the 'service_name' from the URL path and the JSON payload from the request body.
-    2. Queries the database for all active workflow blueprints where the trigger node matches the service name.
-    3. For each matching workflow, it dispatches an asynchronous event to the Inngest engine.
-    4. The Inngest engine then executes the workflow steps (nodes) using the webhook data as the initial context.
-
-    Importance:
-    This dispatcher decouples external event sources from internal workflow logic. It allows users to 
-    create new automated responses to external events entirely through the UI without requiring 
-    backend code changes for every new webhook integration.
+    PURPOSE: The 'Magic Bridge' between external apps and our workflows.
+    
+    RECEIVES:
+    - service_name (e.g., 'razorpay', 'instagram', 'whatsapp'): From URL.
+    - JSON Payload: From the service's webhook request body.
+    
+    LOGIC:
+    1. DECOUPLING: We don't write service-specific code here. Instead...
+    2. TRIGGER LOOKUP: We look in our DB for ANY active workflow whose first node (trigger) 
+       matches this `service_name`.
+    3. ASYNC HANDOFF: For every match, we fire an Inngest event.
+    
+    WHY THIS IS COOL:
+    A user can "add Instagram integration" just by dragging an Instagram node in the UI. 
+    The backend dispatcher will automatically start finding and running that workflow 
+    without any redeployment.
     """
 
-    # 1. Capture the data sent by the service (Razorpay/Instagram)
+    # 1. Capture the data sent by the service
     payload = await request.json()
 
     # 2. Find all active workflows that start with this service
+    # This queries supabase for: is_active=True AND first_node_type == service_name
     blueprints = get_active_workflows_by_trigger(service_name)
 
     if not blueprints:
@@ -809,15 +842,20 @@ async def webhook_dispatcher(service_name: str, request: Request):
     # 3. For every matching workflow, tell Inngest to START
     for blueprint in blueprints:
         await inngest_client.send(
-            "workflow/run_requested",
-            data={
-                "blueprint": blueprint,
-                "payload": payload,  # This becomes 'trigger_data' in our engine
-            },
+            Event(
+                name="workflow/run_requested",
+                data={
+                    "blueprint": blueprint,
+                    "payload": payload,  # This becomes 'trigger_data' in our engine
+                },
+            )
         )
 
     return {"status": "dispatched", "count": len(blueprints)}
 
 
 # Serve Inngest functions properly
+# This exposes a '/api/inngest' endpoint which the Inngest Dev Server polls to 
+# find out what functions (like execute_workflow) are available to run.
 serve(app, inngest_client, [execute_workflow])
+

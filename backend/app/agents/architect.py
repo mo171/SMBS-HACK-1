@@ -37,24 +37,41 @@ class WorkflowArchitect:
 
         system_msg = (
             "You are a Business Workflow Architect. Convert the user's request into a structured graph with proper automation. "
-            "Available Services: razorpay, whatsapp, google_sheets, timer. "
+            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic. "
             "Ensure every node has a unique 'id' and 'position'. "
             "IMPORTANT: Automatically set up variable mappings between nodes for full automation. "
+            "PHONE NUMBERS: Always look for phone numbers in the trigger_data. If the user mentions a specific number, use it. "
+            "Ensure phone numbers are mapped to the 'phone' or 'phoneNumber' parameter exactly as found or via {{trigger_data.customer_phone}}. "
+            "DATA INFERENCE: If the user wants to 'log everything' or 'save details', infer a list of columns for 'google_sheets' task 'append_data'. "
+            'Use values like \'{{"customer": "{{trigger_data.customer_name}}", "amount": "{{trigger_data.amount}}", "link": "{{razorpay_1.payment_url}}", "time": "{{trigger_data.timestamp}}"}}\'. '
+            "SHIPROCKET LOGIC: If the user mentions 'delivery', 'shipping', 'courier', or 'sending items', include a 'shiprocket' node. "
+            "Place it AFTER payment nodes. Map address, city, and pincode from {{trigger_data}}. "
+            "BLUESKY LOGIC: If the user mentions 'post to social', 'post to bluesky', 'broadcast', or 'share update', include a 'bluesky' node. "
+            "AUTO-REPLY LOGIC: If the user says 'reply to mentions' or 'monitor social', build a loop: "
+            "1. 'bluesky' task 'read_notifications' -> 2. 'social_logic' task 'draft_reply' (param: mention={{bluesky_1.notifications[0]}}, context_type='stock', product_name={{bluesky_1.notifications[0].text}}) "
+            "-> 3. 'bluesky' task 'post_content' (param: text={{social_logic_1.suggested_text}}, reply_to={{social_logic_1.reply_to}}). "
+            "For 'bluesky' service with 'post_content' task, include params: "
+            "text (String content of the post, e.g., 'New deal! {{trigger_data.deal_name}} only for ₹{{trigger_data.price}}'). "
+            "For 'shiprocket' service with 'create_order' task, include params: "
+            "customer_name ('{{trigger_data.customer_name}}'), address ('{{trigger_data.address}}'), "
+            "city ('{{trigger_data.city}}'), pincode ('{{trigger_data.pincode}}'), state ('{{trigger_data.state}}'), "
+            "phone ('{{trigger_data.customer_phone}}'), amount (number from trigger). "
             "For 'razorpay' service with 'create_payment_link' task, include params: "
             "amount (number), currency ('INR'), customer_name ('{{trigger_data.customer_name}}'), "
             "customer_email ('{{trigger_data.customer_email}}'), customer_phone ('{{trigger_data.customer_phone}}'), "
             "description ('Payment for order {{trigger_data.order_id}}'). "
             "For 'whatsapp' service with 'send_message' task, include params: "
-            "phoneNumber ('{{trigger_data.customer_phone}}' or '{{razorpay_1.customer_phone}}'), "
+            "phone ('{{trigger_data.phone}}' or '{{trigger_data.customer_phone}}' or '{{razorpay_1.customer_phone}}'), "
             "message ('Hi {{trigger_data.customer_name}}! Your payment link: {{razorpay_1.payment_url}}. Please complete payment.'). "
+            "If shippable, mention tracking info: 'Track here: https://shiprocket.co/{{shiprocket_1.awb_number}}'. "
             "For 'google_sheets' service with 'append_data' task, include params: "
             "spreadsheet_id ('{{env.DEFAULT_SPREADSHEET_ID}}' or '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'), "
-            "range ('A:E'), "
-            'values (\'[["{{trigger_data.customer_name}}", "{{trigger_data.customer_email}}", "{{razorpay_1.amount}}", "{{razorpay_1.payment_url}}", "{{trigger_data.timestamp}}"]]\'). '
-            "For 'timer' service, include params: duration_seconds (number). "
+            "sheet_name ('Sheet1' or 'Class Data'), "
+            'data (\'{{"name": "{{trigger_data.customer_name}}", "status": "Success"}}\' or similar structured object). '
+            "For 'timer' service, include params: duration (number). "
             "Always use variable references like {{trigger_data.field}} and {{node_id.field}} to connect data between nodes. "
-            "Set realistic positions with proper spacing (x: 100, 200, 300... y: 100, 200, 300...). "
-            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1'."
+            "Set realistic positions with proper spacing (x: 100, 200... y: 100, 200...). "
+            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1'."
         )
         print("🔮 [WorkflowArchitect] Invoking LLM with structured output")
 

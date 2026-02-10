@@ -18,6 +18,12 @@ python-dotenv==1.0.1
 # Data processing
 openpyxl==3.1.2
 reportlab==4.0.9
+pandas==3.0.0
+fpdf2==2.8.5
+
+# Integrations
+gspread==6.2.1
+razorpay==2.0.0
 
 # HTTP client
 httpx==0.26.0
@@ -36,3 +42,4 @@ inngest==0.5.15
 # Additional utilities
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+atproto==0.0.65
