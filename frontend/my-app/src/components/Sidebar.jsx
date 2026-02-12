@@ -1,29 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@/store/authStore";
 import {
   LayoutDashboard,
   MessageSquare,
   Workflow,
-  BarChart3,
   Settings,
-  HelpCircle,
   LogOut,
   ChevronLeft,
-  ChevronRight,
   MessageCircle,
   Zap,
+  BarChart,
 } from "lucide-react";
 
 const sidebarItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: MessageSquare, label: "Workflow Chat", href: "/chat" },
-  { icon: Workflow, label: "Workflows", href: "/workflows" },
-  { icon: Zap, label: "Integrations", href: "/integrations" },
-  { icon: Settings, label: "Profile", href: "/profile" },
+  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Workflow Chat", icon: MessageSquare, href: "/chat" },
+  { label: "SocialApps", icon: MessageCircle, href: "/messages" },
+  { label: "Reports", icon: BarChart, href: "/reports" },
+  { label: "Workflows", icon: Workflow, href: "/workflows" },
+  { label: "Integrations", icon: Zap, href: "/integrations" },
+  { label: "Profile", icon: Settings, href: "/profile" },
 ];
 
 export function Sidebar({ isCollapsed, toggleSidebar }) {
@@ -42,7 +41,6 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
         isCollapsed ? "w-20" : "w-64"
       }`}
     >
-      {/* Logo Area */}
       <div
         className={`h-20 flex items-center ${isCollapsed ? "justify-center" : "justify-between px-6"}`}
       >
@@ -56,14 +54,8 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
             </span>
           )}
         </div>
-
-        {/* Toggle Button - Only show here if not collapsed, otherwise it might be better at the bottom or top center? 
-            Design-wise, putting it in the header is standard or on the border. 
-            Let's put it on the right side if open.
-        */}
       </div>
 
-      {/* Collapse Trigger - Floating on the border or inside */}
       <button
         onClick={toggleSidebar}
         className={`absolute -right-3 top-9 w-6 h-6 bg-[#5865F2] rounded-full text-white flex items-center justify-center hover:bg-[#4752C4] transition-all shadow-lg z-50 ${isCollapsed ? "rotate-180 translate-x-1" : ""}`}
@@ -71,7 +63,6 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
         <ChevronLeft className="w-4 h-4" />
       </button>
 
-      {/* Navigation Links */}
       <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto overflow-x-hidden">
         {sidebarItems.map((item) => {
           const isActive = pathname === item.href;
@@ -88,7 +79,6 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
               } ${isCollapsed ? "justify-center" : ""}`}
               title={isCollapsed ? item.label : ""}
             >
-              {/* Active Indicator for collapsed state */}
               {isActive && isCollapsed && (
                 <div className="absolute left-0 w-1 h-8 bg-white rounded-r-full" />
               )}
@@ -98,7 +88,7 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
               />
 
               {!isCollapsed && (
-                <span className="font-medium text-sm whitespace-nowrap trancate">
+                <span className="font-medium text-sm whitespace-nowrap">
                   {item.label}
                 </span>
               )}
@@ -107,7 +97,6 @@ export function Sidebar({ isCollapsed, toggleSidebar }) {
         })}
       </nav>
 
-      {/* Logout */}
       <div className="p-4 border-t border-white/5">
         <button
           onClick={handleLogout}
