@@ -1,8 +1,8 @@
 import logging
 from typing import Any, Dict
 from .base import BaseTool
-from ..services.social_service import social_service
-from ..services.action_service import action_service
+from services.social_service import social_service
+from services.action_service import action_service
 
 logger = logging.getLogger(__name__)
 

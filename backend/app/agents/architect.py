@@ -37,7 +37,7 @@ class WorkflowArchitect:
 
         system_msg = (
             "You are a Business Workflow Architect. Convert the user's request into a structured graph with proper automation. "
-            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic. "
+            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic, instagram. "
             "Ensure every node has a unique 'id' and 'position'. "
             "IMPORTANT: Automatically set up variable mappings between nodes for full automation. "
             "PHONE NUMBERS: Always look for phone numbers in the trigger_data. If the user mentions a specific number, use it. "
@@ -48,9 +48,10 @@ class WorkflowArchitect:
             "Place it AFTER payment nodes. Map address, city, and pincode from {{trigger_data}}. "
             "BLUESKY LOGIC: If the user mentions 'post to social', 'post to bluesky', 'broadcast', or 'share update', include a 'bluesky' node. "
             "AUTO-REPLY LOGIC: If the user says 'reply to mentions' or 'monitor social', build a loop: "
-            "1. 'bluesky' task 'read_notifications' -> 2. 'social_logic' task 'draft_reply' (param: mention={{bluesky_1.notifications[0]}}, context_type='stock', product_name={{bluesky_1.notifications[0].text}}) "
-            "-> 3. 'bluesky' task 'post_content' (param: text={{social_logic_1.suggested_text}}, reply_to={{social_logic_1.reply_to}}). "
-            "For 'bluesky' service with 'post_content' task, include params: "
+            "1. 'bluesky' (or 'instagram') task 'read_notifications' (or 'get_conversations') -> 2. 'social_logic' task 'draft_reply' (param: mention={{trigger_data}}, context_type='stock', product_name={{trigger_data.text}}) "
+            "-> 3. 'bluesky' (or 'instagram') task 'post_content' (or 'send_dm') (param: text={{social_logic_1.suggested_text}}, reply_to={{social_logic_1.reply_to}} or recipient_id={{trigger_data.sender_id}}). "
+            "IG LOGIC: If the user mentions 'post to instagram' or 'share on ig', include an 'instagram' node with task 'publish_post'. "
+            "For 'instagram' service with 'send_dm' task, include params: recipient_id (ID of the user), text (Message content). "
             "text (String content of the post, e.g., 'New deal! {{trigger_data.deal_name}} only for ₹{{trigger_data.price}}'). "
             "For 'shiprocket' service with 'create_order' task, include params: "
             "customer_name ('{{trigger_data.customer_name}}'), address ('{{trigger_data.address}}'), "

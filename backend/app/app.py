@@ -37,6 +37,7 @@ intent analysis, and action execution.
 - docs: Contains the documentation for the application.
 
 """
+
 # imports
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +58,8 @@ from inngest.fast_api import serve
 from fastapi import Request
 from workflows.schema import WorkflowBlueprint
 from lib.supabase_lib import get_active_workflows_by_trigger
+from webhooks.instagram import router as instagram_router
+from routers.messages import router as messages_router
 
 # config
 load_dotenv()
@@ -70,6 +73,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(instagram_router)
+app.include_router(messages_router)
+
 
 """
 This endpoint serves as the primary voice interface for the application, converting speech into actionable business logic.
@@ -80,6 +86,8 @@ Core Logic:
 4. Action Execution(valuable_info-->action): Triggers the `action_service` to perform specific business operations (e.g., database updates, external API calls) based on the identified intent.
 5. Multi-lingual Support:
 """
+
+
 @app.post("/intent-parser")
 async def intent_parser(
     audio_file: UploadFile = File(
@@ -373,12 +381,9 @@ async def intent_parser(
 @app.patch("/invoices/{invoice_id}/confirm")
 async def confirm_invoice(invoice_id: str):
     # Update the status in Supabase
-    result = (
-        supabase.table("invoices")
-        .update({"status": "active"})
-        .eq("id", invoice_id)
-        .execute()
-    )
+    supabase.table("invoices").update({"status": "active"}).eq(
+        "id", invoice_id
+    ).execute()
 
     return {"status": "success", "message": "Invoice is now active and added to ledger"}
 
@@ -436,10 +441,7 @@ async def delete_invoice(invoice_id: str):
             "execute",
         )()
 
-        # 3. Now delete the invoice
-        res = getattr(
-            supabase.table("invoices").delete().eq("id", invoice_id), "execute"
-        )()
+        supabase.table("invoices").delete().eq("id", invoice_id).execute()
 
         return {"status": "success", "message": "Invoice deleted successfully"}
 
@@ -485,6 +487,7 @@ async def export_invoice_excel(invoice_id: str):
         },
     )
 
+
 # whatsapp webhook (uses twilio & intent-parser logic)
 @app.post("/whatsapp")
 async def whatsapp_webhook(
@@ -494,6 +497,48 @@ async def whatsapp_webhook(
     # 2. 'From' is the sender's WhatsApp number, which we use as session_id
     session_id = From
     raw_text = Body
+    print(raw_text)
+    # 1.5 LOGGING: Save to Supabase so it shows in Frontend
+    # Remove 'whatsapp:' prefix for cleaner display if desired, or keep it.
+    # The session_id usually comes as 'whatsapp:+91...' matching the 'From' field.
+    try:
+        # Upsert Session
+        supabase.table("sessions").upsert(
+            {
+                "platform": "whatsapp",
+                "external_id": session_id,
+                "is_bot_active": True,  # Default to true
+                "updated_at": "now()",
+            },
+            on_conflict="platform, external_id",
+        ).execute()
+
+        # Get the integer ID of the session
+        session_res = (
+            supabase.table("sessions")
+            .select("id")
+            .eq("platform", "whatsapp")
+            .eq("external_id", session_id)
+            .single()
+            .execute()
+        )
+
+        if session_res.data:
+            db_session_id = session_res.data["id"]
+
+            # Log Incoming Message
+            supabase.table("unified_messages").insert(
+                {
+                    "session_id": db_session_id,
+                    "platform": "whatsapp",
+                    "direction": "inbound",
+                    "content": raw_text,
+                    "sender_handle": session_id,
+                    "status": "received",
+                }
+            ).execute()
+    except Exception as e:
+        print(f"!!! Error logging WhatsApp message to DB: {e}")
 
     # 2. Contextual Processing
     existing_memory = session_manager.get_session(session_id)
@@ -587,9 +632,23 @@ async def whatsapp_webhook(
     resp = MessagingResponse()
     resp.message(reply)
 
+    # 5.5 LOGGING: Save the OUTGOING reply to Supabase
+    try:
+        if "db_session_id" in locals():
+            supabase.table("unified_messages").insert(
+                {
+                    "session_id": db_session_id,
+                    "platform": "whatsapp",
+                    "direction": "outbound",
+                    "content": reply,
+                    "sender_handle": "AI Assistant",
+                    "status": "sent",
+                }
+            ).execute()
+    except Exception as e:
+        print(f"!!! Error logging WhatsApp reply to DB: {e}")
+
     return Response(content=str(resp), media_type="application/xml")
-
-
 
 
 # ---------------------------------------------------------------------> WORKFLOW AUTOMATION <---------------------------------------------------
@@ -613,24 +672,24 @@ DB Structure (Supabase - workflow_blueprints):
 architect = WorkflowArchitect()
 
 
-#fully working
+# fully working
 @app.post("/workflow/draft")
 async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
     """
     PURPOSE: Converts a user's natural language wish into a structured graph theory (Nodes/Edges).
-    
+
     RECEIVES:
     - prompt (str): The raw text from the user (e.g., "When I get an order, send a WhatsApp").
     - user_id (str): The owner of this workflow.
-    
+
     LOGIC:
     1. Pass the prompt to `WorkflowArchitect`.
     2. Architect uses LLM + Tool calling to generate a valid JSON blueprint (nodes/edges).
     3. The blueprint is saved to 'workflow_blueprints' with `is_active=False`.
-    
+
     RETURNS:
     - workflow_id: The ID of the newly created draft.
-    
+
     FRONTEND IMPACT:
     The frontend should redirect to the Canvas and load this ID to let the user "see" their automation.
     """
@@ -670,17 +729,17 @@ async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
 async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict = None):
     """
     PURPOSE: Manually triggers a specific workflow execution.
-    
+
     RECEIVES:
     - blueprint (WorkflowBlueprint): The full graph (nodes/edges) representing the code to run.
     - payload (dict): Optional external data (like an order object) to inject into the workflow.
-    
+
     LOGIC:
     1. Generates a unique `run_id` for tracking.
     2. Packages the blueprint and payload into an Inngest Event.
-    3. Handoff: `inngest_client.send` puts this on a queue. The `execute_workflow` function 
+    3. Handoff: `inngest_client.send` puts this on a queue. The `execute_workflow` function
        in Python then takes over asynchronously.
-    
+
     RETURNS:
     - run_id: Used for monitoring progress in real-time.
     """
@@ -688,6 +747,7 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
     print("▶️ [/workflow/execute] Endpoint hit")
 
     import uuid
+
     run_id = str(uuid.uuid4())
     print(f"🆔 [/workflow/execute] Generated run_id: {run_id}")
 
@@ -708,7 +768,9 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
 
     return {"status": "success", "run_id": run_id}
 
+
 # ---------------------------------------------------------------------> CORE WORKFLOW ENDS ABOVE <---------------------------------------------------
+
 
 @app.get("/workflows")
 async def list_workflows(user_id: str = Query(...)):
@@ -767,16 +829,16 @@ async def save_workflow(
 ):
     """
     PURPOSE: Finalizes a draft or updates an existing workflow to be 'Active'.
-    
+
     RECEIVES:
     - blueprint: Modified nodes/edges from the Frontend Canvas.
     - user_id: Owner ID.
     - workflow_name: What to call this automation.
-    
+
     LOGIC:
     1. Validation: Ensures the workflow actually has logic (nodes).
     2. Storage: Inserts or Updates the record in Supabase with `is_active=True`.
-    
+
     RETURNS: The newly inserted/updated database record ID.
     """
     print("� [/workflow/save] Saving workflow...")
@@ -808,24 +870,24 @@ async def save_workflow(
         raise HTTPException(500, f"Failed to save workflow: {str(e)}")
 
 
-@app.post("/webhooks/{service_name}")
-async def webhook_dispatcher(service_name: str, request: Request):
+@app.post("/webhooks/generic/{service_name}")
+async def generic_webhook_dispatcher(service_name: str, request: Request):
     """
     PURPOSE: The 'Magic Bridge' between external apps and our workflows.
-    
+
     RECEIVES:
     - service_name (e.g., 'razorpay', 'instagram', 'whatsapp'): From URL.
     - JSON Payload: From the service's webhook request body.
-    
+
     LOGIC:
     1. DECOUPLING: We don't write service-specific code here. Instead...
-    2. TRIGGER LOOKUP: We look in our DB for ANY active workflow whose first node (trigger) 
+    2. TRIGGER LOOKUP: We look in our DB for ANY active workflow whose first node (trigger)
        matches this `service_name`.
     3. ASYNC HANDOFF: For every match, we fire an Inngest event.
-    
+
     WHY THIS IS COOL:
-    A user can "add Instagram integration" just by dragging an Instagram node in the UI. 
-    The backend dispatcher will automatically start finding and running that workflow 
+    A user can "add Instagram integration" just by dragging an Instagram node in the UI.
+    The backend dispatcher will automatically start finding and running that workflow
     without any redeployment.
     """
 
@@ -855,7 +917,6 @@ async def webhook_dispatcher(service_name: str, request: Request):
 
 
 # Serve Inngest functions properly
-# This exposes a '/api/inngest' endpoint which the Inngest Dev Server polls to 
+# This exposes a '/api/inngest' endpoint which the Inngest Dev Server polls to
 # find out what functions (like execute_workflow) are available to run.
 serve(app, inngest_client, [execute_workflow])
-

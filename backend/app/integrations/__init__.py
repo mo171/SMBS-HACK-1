@@ -5,6 +5,7 @@ from .timer_tool import TimerTool
 from .shiprocket_tool import ShiprocketTool
 from .bluesky_tool import BlueskyTool
 from .social_logic_tool import SocialLogicTool
+from .instagram_tool import InstagramTool
 
 TOOL_REGISTRY = {
     "whatsapp": WhatsAppTool(),
@@ -14,4 +15,5 @@ TOOL_REGISTRY = {
     "shiprocket": ShiprocketTool(),
     "bluesky": BlueskyTool(),
     "social_logic": SocialLogicTool(),
+    "instagram": InstagramTool(),
 }
