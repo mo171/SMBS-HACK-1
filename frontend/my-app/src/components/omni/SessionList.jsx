@@ -55,7 +55,13 @@ export default function SessionList({
       <div className="p-4 border-b border-white/10">
         <h2 className="text-white font-semibold flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-blue-400" />
-          {activePlatform === "whatsapp" ? "WhatsApp" : "Instagram DMs"}
+          {activePlatform === "whatsapp"
+            ? "WhatsApp"
+            : activePlatform === "instagram"
+              ? "Instagram DMs"
+              : activePlatform === "bluesky"
+                ? "Bluesky Mentions"
+                : "Pixelfed Notifications"}
         </h2>
       </div>
 
@@ -99,10 +105,20 @@ export default function SessionList({
                       className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-semibold ${
                         session.platform === "whatsapp"
                           ? "bg-green-500/20 text-green-400"
-                          : "bg-pink-500/20 text-pink-400"
+                          : session.platform === "instagram"
+                            ? "bg-pink-500/20 text-pink-400"
+                            : session.platform === "bluesky"
+                              ? "bg-blue-500/20 text-blue-400"
+                              : "bg-purple-500/20 text-purple-400"
                       }`}
                     >
-                      {session.platform === "whatsapp" ? "WA" : "IG"}
+                      {session.platform === "whatsapp"
+                        ? "WA"
+                        : session.platform === "instagram"
+                          ? "IG"
+                          : session.platform === "bluesky"
+                            ? "BS"
+                            : "PX"}
                     </span>
                   </div>
 

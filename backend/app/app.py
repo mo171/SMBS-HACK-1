@@ -60,6 +60,8 @@ from workflows.schema import WorkflowBlueprint
 from lib.supabase_lib import get_active_workflows_by_trigger
 from webhooks.instagram import router as instagram_router
 from routers.messages import router as messages_router
+from services.sync_service import sync_service
+import asyncio
 
 # config
 load_dotenv()
@@ -75,6 +77,23 @@ app.add_middleware(
 
 app.include_router(instagram_router)
 app.include_router(messages_router)
+
+
+async def background_sync_task():
+    """Background task to poll for new messages every 60 seconds"""
+    while True:
+        try:
+            print("🔄 Running background sync for social platforms...")
+            await sync_service.sync_all()
+        except Exception as e:
+            print(f"❌ Background sync error: {e}")
+        await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the background sync task
+    asyncio.create_task(background_sync_task())
 
 
 """

@@ -37,7 +37,7 @@ class WorkflowArchitect:
 
         system_msg = (
             "You are a Business Workflow Architect. Convert the user's request into a structured graph with proper automation. "
-            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic, instagram. "
+            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic, pixelfed, instagram. "
             "Ensure every node has a unique 'id' and 'position'. "
             "IMPORTANT: Automatically set up variable mappings between nodes for full automation. "
             "PHONE NUMBERS: Always look for phone numbers in the trigger_data. If the user mentions a specific number, use it. "
@@ -47,9 +47,11 @@ class WorkflowArchitect:
             "SHIPROCKET LOGIC: If the user mentions 'delivery', 'shipping', 'courier', or 'sending items', include a 'shiprocket' node. "
             "Place it AFTER payment nodes. Map address, city, and pincode from {{trigger_data}}. "
             "BLUESKY LOGIC: If the user mentions 'post to social', 'post to bluesky', 'broadcast', or 'share update', include a 'bluesky' node. "
+            "PIXELFED LOGIC: If the user mentions 'post to pixelfed', 'share photo', or 'post image', include a 'pixelfed' node with task 'publish_post'. "
+            "For 'pixelfed' service with 'publish_post' task, include params: caption (text), image_url (URL of image). "
             "AUTO-REPLY LOGIC: If the user says 'reply to mentions' or 'monitor social', build a loop: "
-            "1. 'bluesky' (or 'instagram') task 'read_notifications' (or 'get_conversations') -> 2. 'social_logic' task 'draft_reply' (param: mention={{trigger_data}}, context_type='stock', product_name={{trigger_data.text}}) "
-            "-> 3. 'bluesky' (or 'instagram') task 'post_content' (or 'send_dm') (param: text={{social_logic_1.suggested_text}}, reply_to={{social_logic_1.reply_to}} or recipient_id={{trigger_data.sender_id}}). "
+            "1. 'bluesky' (or 'instagram' or 'pixelfed') task 'read_notifications' (or 'get_conversations') -> 2. 'social_logic' task 'draft_reply' (param: mention={{trigger_data}}, context_type='stock', product_name={{trigger_data.text}}) "
+            "-> 3. 'bluesky' (or 'instagram' or 'pixelfed') task 'post_content' (or 'send_dm') (param: text={{social_logic_1.suggested_text}}, reply_to={{social_logic_1.reply_to}} or recipient_id={{trigger_data.sender_id}}). "
             "IG LOGIC: If the user mentions 'post to instagram' or 'share on ig', include an 'instagram' node with task 'publish_post'. "
             "For 'instagram' service with 'send_dm' task, include params: recipient_id (ID of the user), text (Message content). "
             "text (String content of the post, e.g., 'New deal! {{trigger_data.deal_name}} only for ₹{{trigger_data.price}}'). "
@@ -72,7 +74,7 @@ class WorkflowArchitect:
             "For 'timer' service, include params: duration (number). "
             "Always use variable references like {{trigger_data.field}} and {{node_id.field}} to connect data between nodes. "
             "Set realistic positions with proper spacing (x: 100, 200... y: 100, 200...). "
-            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1'."
+            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1', 'pixelfed_1'."
         )
         print("🔮 [WorkflowArchitect] Invoking LLM with structured output")
 

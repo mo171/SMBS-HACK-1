@@ -1,11 +1,13 @@
 "use client";
 
-import { MessageCircle, Instagram } from "lucide-react";
+import { MessageCircle, Instagram, Cloud, Image } from "lucide-react";
 
 export default function PlatformTabs({ activePlatform, onPlatformChange }) {
   const tabs = [
     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
     { id: "instagram", label: "Instagram", icon: Instagram },
+    { id: "bluesky", label: "Bluesky", icon: Cloud },
+    { id: "pixelfed", label: "Pixelfed", icon: Image },
   ];
 
   return (

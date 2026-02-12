@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from lib.supabase_lib import supabase
 from integrations.instagram_tool import InstagramTool
 from integrations.bluesky_tool import BlueskyTool
+from integrations.pixelfed_tool import PixelfedTool
+from services.sync_service import sync_service
 
 router = APIRouter()
 
@@ -95,9 +97,65 @@ async def get_all_whatsapp_messages():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/messages/sync")
+async def sync_messages():
+    """Trigger manual sync for Bluesky and Pixelfed"""
+    try:
+        await sync_service.sync_all()
+        return {"status": "success", "message": "Sync completed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class SendMessageRequest(BaseModel):
     session_id: str
     text: str
+    reply_to_id: str = None  # Optional database ID of the message being replied to
+
+
+@router.get("/api/messages/sessions/{session_id}/detail")
+async def get_session_detail(session_id: str):
+    """Fetch session details including bot status"""
+    try:
+        res = (
+            supabase.table("sessions")
+            .select("*")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        if not res.data:
+            raise HTTPException(404, "Session not found")
+        return {"status": "success", "data": res.data}
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+
+@router.post("/api/messages/sessions/{session_id}/toggle-bot")
+async def toggle_session_bot(session_id: str):
+    """Toggle the is_bot_active flag for a session"""
+    try:
+        # Get current status
+        current = (
+            supabase.table("sessions")
+            .select("is_bot_active")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        if not current.data:
+            raise HTTPException(404, "Session not found")
+
+        new_status = not current.data.get("is_bot_active", True)
+        res = (
+            supabase.table("sessions")
+            .update({"is_bot_active": new_status})
+            .eq("id", session_id)
+            .execute()
+        )
+        return {"status": "success", "is_bot_active": new_status}
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
 
 
 @router.post("/api/messages/send")
@@ -134,18 +192,21 @@ async def send_message(req: SendMessageRequest):
 
         elif platform == "bluesky":
             tool = BlueskyTool()
-            # Fallback: Just post to timeline mentioning them since we don't have thread context
-            # Or reply if external_id happens to be a DID we can use?
-            # Bluesky needs a full "reply_to" object.
-            # Simplified: just create a new post tagging them.
-            # Convert DID to handle if possible? external_id stores what?
 
-            # Assuming external_id is a handle or DID.
-            # Let's try to post a mention.
-            post_text = f"@{external_id} {req.text}"
-            res = await tool.execute("post_content", {"text": post_text})
+            # 1. Fetch convo_id from session metadata
+            convo_id = session.get("metadata", {}).get("convo_id")
 
-            # Manually sync to DB for Bluesky since tool doesn't do it automatically here
+            if not convo_id:
+                # If metadata is missing, we can try to find the convo by other user's handle?
+                # For now, if it's missing, it's an error or we need to look it up.
+                # But sync should have populated it.
+                raise HTTPException(400, "Missing convo_id in session metadata")
+
+            res = await tool.execute(
+                "send_dm", {"convo_id": convo_id, "text": req.text}
+            )
+
+            # 2. Manually sync to DB for Bluesky
             if res.get("status") == "success":
                 supabase.table("unified_messages").insert(
                     {
@@ -155,6 +216,56 @@ async def send_message(req: SendMessageRequest):
                         "content": req.text,
                         "sender_handle": "AI Assistant",
                         "status": "sent",
+                        "external_id": res.get("id"),  # DM message ID
+                    }
+                ).execute()
+
+            return res
+
+        elif platform == "pixelfed":
+            tool = PixelfedTool()
+            in_reply_to_id = None
+
+            if req.reply_to_id:
+                msg_res = (
+                    supabase.table("unified_messages")
+                    .select("external_id")
+                    .eq("id", req.reply_to_id)
+                    .single()
+                    .execute()
+                )
+                if msg_res.data:
+                    in_reply_to_id = msg_res.data["external_id"]
+
+            if not in_reply_to_id:
+                # Fallback to latest inbound
+                last_inbound = (
+                    supabase.table("unified_messages")
+                    .select("external_id")
+                    .eq("session_id", req.session_id)
+                    .eq("direction", "inbound")
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                in_reply_to_id = (
+                    last_inbound.data[0]["external_id"] if last_inbound.data else None
+                )
+
+            res = await tool.execute(
+                "post_reply", {"in_reply_to_id": in_reply_to_id, "text": req.text}
+            )
+
+            if res.get("status") == "success":
+                supabase.table("unified_messages").insert(
+                    {
+                        "session_id": req.session_id,
+                        "platform": "pixelfed",
+                        "direction": "outbound",
+                        "content": req.text,
+                        "sender_handle": "AI Assistant",
+                        "status": "sent",
+                        "external_id": str(res.get("data", {}).get("id")),
                     }
                 ).execute()
 
