@@ -36,7 +36,18 @@ const useWorkflowStore = create((set, get) => ({
   },
 
   setElements: (nodes, edges) => {
-    set({ nodes, edges });
+    console.log(
+      "💾 [workflowStore] setElements called with:",
+      nodes.length,
+      "nodes,",
+      edges.length,
+      "edges",
+    );
+    set({ nodes: [...nodes], edges: [...edges] });
+    console.log(
+      "✅ [workflowStore] State updated. New nodes count:",
+      get().nodes.length,
+    );
   },
 
   setSelectedNode: (node) => {

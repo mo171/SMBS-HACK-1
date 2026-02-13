@@ -79,11 +79,31 @@ async def execute_workflow(ctx):
             node_states = {}  # Track individual node execution states
             print(f"📊 [WorkflowEngine] Initial results: {results}")
 
-            for node in blueprint["nodes"]:
+            # Build a map of nodes for O(1) lookup
+            node_map = {node["id"]: node for node in blueprint["nodes"]}
+
+            # Start from the first node in the list (or a specified start_node_id)
+            current_node_id = blueprint["nodes"][0]["id"]
+            steps_executed_count = 0
+            MAX_STEPS = 50  # Prevent infinite loops
+
+            while current_node_id and steps_executed_count < MAX_STEPS:
+                steps_executed_count += 1
+                node = node_map.get(current_node_id)
+
+                if not node:
+                    print(
+                        f"❌ [WorkflowEngine] Node {current_node_id} not found in blueprint"
+                    )
+                    break
+
                 node_id = node["id"]
+                node_type = node.get("type", "action")  # Default to action if missing
+
                 print(f"\n{'-' * 60}")
-                print(f"🔵 [WorkflowEngine] Processing node: {node_id}")
-                print(f"📊 [WorkflowEngine] Node data: {node.get('data')}")
+                print(
+                    f"🔵 [WorkflowEngine] Processing node: {node_id} (Type: {node_type})"
+                )
 
                 # Mark node as running
                 node_states[node_id] = {
@@ -91,7 +111,6 @@ async def execute_workflow(ctx):
                     "data": None,
                     "error": None,
                 }
-                print(f"⏳ [WorkflowEngine] Marking node {node_id} as running")
 
                 await ctx.step.run(
                     f"mark_running_{node_id}_{iteration}",
@@ -103,25 +122,75 @@ async def execute_workflow(ctx):
                         .data
                     ),
                 )
-                print(
-                    f"✅ [WorkflowEngine] Node {node_id} marked as running in Supabase"
-                )
 
-                # Execute the node action
                 try:
-                    print(f"🚀 [WorkflowEngine] Executing action for node {node_id}")
+                    next_node_id = None
 
-                    async def _run_action():
-                        return await perform_action(node["data"], results)
+                    if node_type == "router":
+                        # ROUTER LOGIC
+                        from lib.router_logic import find_next_step
 
-                    action_result = await ctx.step.run(
-                        f"execute_{node_id}_{iteration}",
-                        _run_action,
-                    )
-                    print(
-                        f"✅ [WorkflowEngine] Action result for node {node_id}: {action_result}"
-                    )
+                        print(
+                            f"🔀 [WorkflowEngine] Evaluating router conditions for {node_id}"
+                        )
 
+                        routes = node.get("data", {}).get("routes", [])
+
+                        # We need to resolve variables against the results SO FAR
+                        next_node_id = find_next_step(routes, results)
+
+                        action_result = {
+                            "status": "routed",
+                            "selected_route": next_node_id,
+                            "message": f"Routed to {next_node_id}"
+                            if next_node_id
+                            else "No matching route found",
+                        }
+
+                        print(
+                            f"👉 [WorkflowEngine] Router decision: {action_result['message']}"
+                        )
+
+                        # If no route matched, we might stop or continue to a default edge?
+                        # For now, if no route matches, next_node_id is None, loop ends.
+
+                    else:
+                        # STANDARD ACTION LOGIC
+                        print(
+                            f"🚀 [WorkflowEngine] Executing action for node {node_id}"
+                        )
+
+                        async def _run_action():
+                            return await perform_action(node["data"], results)
+
+                        action_result = await ctx.step.run(
+                            f"execute_{node_id}_{iteration}",
+                            _run_action,
+                        )
+
+                        # Standard nodes usually flow to the "next" node in the list
+                        # BUT since we are now graph-based, we need an explicit "next" pointer
+                        # IF the blueprint stores edges/next_node_id.
+                        # FAILSAFE: If blueprint is old/linear, just take the next index.
+
+                        # Check if node has an explicit 'next_node_id'
+                        next_node_id = node.get("next_node_id")
+
+                        # If not, try to find the next node in the original list order (Legacy Support)
+                        if not next_node_id:
+                            current_index = -1
+                            for i, n in enumerate(blueprint["nodes"]):
+                                if n["id"] == node_id:
+                                    current_index = i
+                                    break
+                            if current_index != -1 and current_index + 1 < len(
+                                blueprint["nodes"]
+                            ):
+                                next_node_id = blueprint["nodes"][current_index + 1][
+                                    "id"
+                                ]
+
+                    # Handle Execution Results
                     if (
                         isinstance(action_result, dict)
                         and action_result.get("status") == "error"
@@ -132,7 +201,6 @@ async def execute_workflow(ctx):
 
                     # Store the result
                     results[node_id] = action_result
-                    print(f"💾 [WorkflowEngine] Stored result for node {node_id}")
 
                     # Mark node as completed
                     node_states[node_id] = {
@@ -140,19 +208,18 @@ async def execute_workflow(ctx):
                         "data": action_result,
                         "error": None,
                     }
-                    print(f"✅ [WorkflowEngine] Node {node_id} marked as completed")
+                    print(
+                        f"✅ [WorkflowEngine] Node {node_id} completed. Next -> {next_node_id}"
+                    )
 
                 except Exception as node_error:
                     print(f"❌ [WorkflowEngine] Error in node {node_id}: {node_error}")
-
-                    # Mark node as failed
                     node_states[node_id] = {
                         "status": "failed",
                         "data": None,
                         "error": str(node_error),
                     }
-
-                    # Update log before raising
+                    # Update log failure state
                     await ctx.step.run(
                         f"update_log_fail_{node_id}_{iteration}",
                         lambda ns=node_states.copy(): (
@@ -165,7 +232,6 @@ async def execute_workflow(ctx):
                     raise node_error
 
                 # Update log with completed state
-                print(f"💾 [WorkflowEngine] Updating workflow_logs for node {node_id}")
                 await ctx.step.run(
                     f"update_log_{node_id}_{iteration}",
                     lambda ns=node_states.copy(): (
@@ -176,7 +242,14 @@ async def execute_workflow(ctx):
                         .data
                     ),
                 )
-                print(f"✅ [WorkflowEngine] Workflow log updated for node {node_id}")
+
+                # Move to next node
+                current_node_id = next_node_id
+
+            if steps_executed_count >= MAX_STEPS:
+                print(
+                    "⚠️ [WorkflowEngine] Max steps limit reached (Infinite loop protection)"
+                )
 
             # 3. LOG COMPLETION (for this iteration)
             print(f"\n{'-' * 60}")

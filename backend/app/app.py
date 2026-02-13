@@ -868,6 +868,29 @@ async def get_workflow(workflow_id: str, user_id: str = Query(...)):
         raise HTTPException(500, f"Failed to fetch workflow: {str(e)}")
 
 
+@app.delete("/workflows/{workflow_id}")
+async def delete_workflow(workflow_id: str, user_id: str = Query(...)):
+    """
+    PURPOSE: Deletes a workflow by ID.
+    """
+    print(f"🗑️ [/workflows] Deleting workflow: {workflow_id} for user: {user_id}")
+
+    try:
+        # Perform Delete
+        result = (
+            supabase.table("workflow_blueprints")
+            .delete()
+            .eq("id", workflow_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+        return {"status": "success", "message": "Workflow deleted successfully"}
+
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete workflow: {str(e)}")
+
+
 @app.post("/workflow/save")
 async def save_workflow(
     blueprint: WorkflowBlueprint,

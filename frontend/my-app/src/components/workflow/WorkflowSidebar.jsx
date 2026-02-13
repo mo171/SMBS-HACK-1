@@ -3,6 +3,7 @@
 import { Sparkles, Play, Save, FolderOpen, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import useWorkflowStore from "@/store/workflowStore";
+import { useAuthStore } from "@/store/authStore";
 import { toast } from "react-hot-toast";
 
 export default function WorkflowSidebar() {
@@ -12,31 +13,44 @@ export default function WorkflowSidebar() {
   const [isSaving, setIsSaving] = useState(false);
   const [savedWorkflows, setSavedWorkflows] = useState([]);
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
-  const [showSavedWorkflows, setShowSavedWorkflows] = useState(false);
+  const [showSavedWorkflows, setShowSavedWorkflows] = useState(true); // Default to true
 
   const { setElements, nodes, edges } = useWorkflowStore();
 
-  // Load saved workflows on component mount
+  // Use the hook to subscribe to user changes
+  const { user } = useAuthStore();
+
+  // Load saved workflows when user becomes available
   useEffect(() => {
-    loadSavedWorkflows();
-  }, []);
+    if (user) {
+      loadSavedWorkflows();
+    }
+  }, [user]); // Re-run when user changes
 
   const loadSavedWorkflows = async () => {
+    if (!user) return; // Added early exit if no user
+
     setIsLoadingWorkflows(true);
     try {
       const { api } = await import("@/lib/axios");
-      const { useAuthStore } = await import("@/store/authStore");
+      // Removed: const { useAuthStore } = await import("@/store/authStore");
+      // Removed: const user = useAuthStore.getState().user;
+      // Removed: if (!user) { console.log("⚠️ [WorkflowSidebar] No user found, skipping load"); return; }
 
-      const user = useAuthStore.getState().user;
-      if (!user) return;
-
+      console.log("🔄 [WorkflowSidebar] Loading workflows for user:", user.id);
       const response = await api.get("/workflows", {
         params: { user_id: user.id },
       });
 
+      console.log(
+        "✅ [WorkflowSidebar] Loaded workflows:",
+        response.data.workflows,
+      );
       setSavedWorkflows(response.data.workflows || []);
+      // Removed: Ensure the list is shown if we have items
+      // Removed: if (response.data.workflows?.length > 0) { setShowSavedWorkflows(true); }
     } catch (error) {
-      console.error("Failed to load workflows:", error);
+      console.error("❌ [WorkflowSidebar] Failed to load workflows:", error);
       toast.error("Failed to load saved workflows");
     } finally {
       setIsLoadingWorkflows(false);
@@ -212,9 +226,20 @@ export default function WorkflowSidebar() {
         animated: true,
       }));
 
+      console.log(
+        "🔄 [WorkflowSidebar] Formatted nodes for store:",
+        formattedNodes.length,
+        formattedNodes[0],
+      );
+      console.log(
+        "🔄 [WorkflowSidebar] Formatted edges for store:",
+        formattedEdges.length,
+      );
+
       setElements(formattedNodes, formattedEdges);
       toast.success(`Loaded workflow: ${workflow.name}`);
-      setShowSavedWorkflows(false);
+      // Don't hide the list anymore
+      // setShowSavedWorkflows(false);
     } catch (error) {
       console.error("❌ [WorkflowSidebar] Load error:", error);
       toast.error("Failed to load workflow");
@@ -227,19 +252,25 @@ export default function WorkflowSidebar() {
     }
 
     try {
-      const { supabase } = await import("@/lib/supabase");
+      const { api } = await import("@/lib/axios");
       const { useAuthStore } = await import("@/store/authStore");
 
       const user = useAuthStore.getState().user;
       if (!user) return;
 
-      await supabase
-        .from("workflow_blueprints")
-        .delete()
-        .eq("id", workflowId)
-        .eq("user_id", user.id);
+      console.log(`🗑️ [WorkflowSidebar] Deleting workflow ${workflowId}`);
+
+      // Use the new API endpoint
+      await api.delete(`/workflows/${workflowId}`, {
+        params: { user_id: user.id },
+      });
 
       toast.success("Workflow deleted successfully");
+
+      // Remove from local state immediately for better UI response
+      setSavedWorkflows((prev) => prev.filter((w) => w.id !== workflowId));
+
+      // Also reload to be safe
       loadSavedWorkflows();
     } catch (error) {
       console.error("❌ [WorkflowSidebar] Delete error:", error);
@@ -287,45 +318,6 @@ export default function WorkflowSidebar() {
             )}
           </button>
 
-          {/* Save Current Workflow Section */}
-          <div className="pt-4 border-t border-white/10">
-            <label className="text-xs font-semibold text-gray-400 uppercase mb-2 block">
-              Save Current Workflow
-            </label>
-            <div className="space-y-3">
-              <input
-                className="w-full bg-[#0F1016] border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#5865F2] outline-none transition-colors placeholder:text-gray-600"
-                placeholder="Enter workflow name..."
-                value={workflowName}
-                onChange={(e) => setWorkflowName(e.target.value)}
-                disabled={isSaving}
-              />
-              <button
-                onClick={handleSaveWorkflow}
-                disabled={
-                  !workflowName.trim() || isSaving || nodes.length === 0
-                }
-                className={`w-full py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                  !workflowName.trim() || isSaving || nodes.length === 0
-                    ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
-                }`}
-              >
-                {isSaving ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                    <span>Saving...</span>
-                  </div>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    Save Workflow
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
           {/* Saved Workflows Section */}
           <div className="pt-4 border-t border-white/10">
             <div className="flex items-center justify-between mb-3">
@@ -355,7 +347,8 @@ export default function WorkflowSidebar() {
                   savedWorkflows.map((workflow) => (
                     <div
                       key={workflow.id}
-                      className="bg-[#0F1016] border border-white/10 rounded-lg p-3 hover:border-white/20 transition-colors group"
+                      onClick={() => handleLoadWorkflow(workflow)}
+                      className="bg-[#0F1016] border border-white/10 rounded-lg p-3 hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer group"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -369,16 +362,10 @@ export default function WorkflowSidebar() {
                         </div>
                         <div className="flex items-center gap-1 ml-2">
                           <button
-                            onClick={() => handleLoadWorkflow(workflow)}
-                            className="p-1.5 text-gray-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded transition-colors"
-                            title="Load workflow"
-                          >
-                            <FolderOpen className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleDeleteWorkflow(workflow.id, workflow.name)
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteWorkflow(workflow.id, workflow.name);
+                            }}
                             className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
                             title="Delete workflow"
                           >

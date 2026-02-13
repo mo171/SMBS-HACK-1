@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { ReactFlow, Background, Controls, MiniMap, Panel } from "@xyflow/react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  Panel,
+  useReactFlow,
+  ReactFlowProvider,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import WorkflowNode from "./WorkflowNode";
@@ -24,7 +32,8 @@ const defaultEdgeOptions = {
   },
 };
 
-export default function WorkflowCanvas() {
+function WorkflowCanvasContent() {
+  const { fitView } = useReactFlow();
   const {
     nodes,
     edges,
@@ -39,8 +48,31 @@ export default function WorkflowCanvas() {
     setNodes,
   } = useWorkflowStore();
 
+  React.useEffect(() => {
+    console.log(
+      "🎨 [WorkflowCanvas] Render. Nodes:",
+      nodes.length,
+      "Edges:",
+      edges.length,
+    );
+    if (nodes.length > 0) {
+      console.log("🎨 [WorkflowCanvas] First node pos:", nodes[0].position);
+    }
+  }, [nodes, edges]);
+
   const [isExecuting, setIsExecuting] = React.useState(false);
   const [currentRunId, setCurrentRunId] = React.useState(null);
+
+  // Auto-fit view when nodes are loaded
+  React.useEffect(() => {
+    if (nodes.length > 0) {
+      // Small delay to ensure rendering matches state
+      const timer = setTimeout(() => {
+        fitView({ duration: 800, padding: 0.2 });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [nodes.length, fitView]);
 
   const onNodeClick = useCallback(
     (_, node) => {
@@ -326,5 +358,13 @@ export default function WorkflowCanvas() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WorkflowCanvas() {
+  return (
+    <ReactFlowProvider>
+      <WorkflowCanvasContent />
+    </ReactFlowProvider>
   );
 }
