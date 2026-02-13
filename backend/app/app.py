@@ -726,6 +726,12 @@ async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
     blueprint_json = blueprint_obj.model_dump()
     print(f"📊 [/workflow/draft] Blueprint JSON: {blueprint_json}")
 
+    # HACK: Store loop_seconds in description to avoid schema change
+    loop_seconds = blueprint_obj.loop_seconds
+    description = blueprint_obj.description or ""
+    if loop_seconds and loop_seconds > 0:
+        description = f"[LOOP={loop_seconds}] {description}"
+
     # 3. Save it to Supabase so the Frontend can load it
     print("💾 [/workflow/draft] Inserting into Supabase workflow_blueprints table")
     result = (
@@ -734,6 +740,7 @@ async def create_draft(prompt: str = Query(...), user_id: str = Query(...)):
             {
                 "user_id": user_id,
                 "name": f"AI Draft: {prompt[:20]}...",
+                "description": description,
                 "nodes": blueprint_json["nodes"],
                 "edges": blueprint_json["edges"],
                 "is_active": False,  # User needs to review it first!
@@ -788,6 +795,25 @@ async def execute_workflow_endpoint(blueprint: WorkflowBlueprint, payload: dict 
     print("=" * 60 + "\n")
 
     return {"status": "success", "run_id": run_id}
+
+
+@app.post("/workflow/stop/{run_id}")
+async def stop_workflow(run_id: str):
+    """
+    PURPOSE: Stops a running workflow loop by setting its status to 'cancelled'.
+    """
+    print(f"🛑 [/workflow/stop] Request to stop run_id: {run_id}")
+
+    # Update status to cancelled in Supabase
+    result = (
+        supabase.table("workflow_logs")
+        .update({"status": "cancelled"})
+        .eq("run_id", run_id)
+        .execute()
+    )
+
+    print(f"✅ [/workflow/stop] Stop signal sent for run_id: {run_id}")
+    return {"status": "success", "message": "Workflow stop signal sent"}
 
 
 # ---------------------------------------------------------------------> CORE WORKFLOW ENDS ABOVE <---------------------------------------------------

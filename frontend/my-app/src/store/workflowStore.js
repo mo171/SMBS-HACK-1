@@ -5,6 +5,7 @@ const useWorkflowStore = create((set, get) => ({
   nodes: [],
   edges: [],
   selectedNode: null,
+  workflowMeta: {}, // Stores loop_seconds, name, etc.
 
   // Realtime monitoring state
   nodeStates: {}, // Map of node_id -> { status, data, error }
@@ -14,6 +15,7 @@ const useWorkflowStore = create((set, get) => ({
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
+  setWorkflowMeta: (meta) => set({ workflowMeta: meta }),
 
   onNodesChange: (changes) => {
     set({

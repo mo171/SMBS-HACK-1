@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 
 class NodeParams(BaseModel):
     """Flexible parameters for workflow nodes. Can contain any key-value pairs."""
+
     model_config = ConfigDict(extra="allow")
 
 
@@ -12,7 +13,7 @@ class NodeData(BaseModel):
     task: str
     # Use a concrete dict for params with default automation values
     params: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Optional fields for better organization
     label: Optional[str] = None
     description: Optional[str] = None
@@ -36,7 +37,8 @@ class WorkflowEdge(BaseModel):
 class WorkflowBlueprint(BaseModel):
     nodes: List[WorkflowNode]
     edges: List[WorkflowEdge]
-    
+
     # Optional metadata
     name: Optional[str] = None
     description: Optional[str] = None
+    loop_seconds: Optional[int] = 0  # 0 means run once, >0 means loop every X seconds

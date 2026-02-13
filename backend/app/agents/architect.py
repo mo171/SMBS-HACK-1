@@ -75,6 +75,10 @@ class WorkflowArchitect:
             "Always use variable references like {{trigger_data.field}} and {{node_id.field}} to connect data between nodes. "
             "Set realistic positions with proper spacing (x: 100, 200... y: 100, 200...). "
             "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1', 'pixelfed_1'."
+            "LOOPING/RECURRING TASKS: If the user says 'every X seconds', 'repeat every X minutes', or 'loop every X hours', "
+            "set the blueprint's 'loop_seconds' field to the interval in seconds. "
+            "Example: 'every 5 seconds' -> loop_seconds = 5. 'every 1 minute' -> loop_seconds = 60. "
+            "If no repetition is mentioned, keep loop_seconds = 0."
         )
         print("🔮 [WorkflowArchitect] Invoking LLM with structured output")
 

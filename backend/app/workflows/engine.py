@@ -46,111 +46,176 @@ async def execute_workflow(ctx):
     )
     print(f"✅ [WorkflowEngine] Workflow log initialized: {log_entry}")
 
-    results = {"trigger_data": event_payload}
-    node_states = {}  # Track individual node execution states
-    print(f"📊 [WorkflowEngine] Initial results: {results}")
+    print(f"✅ [WorkflowEngine] Workflow log initialized: {log_entry}")
+
+    loop_seconds = blueprint.get("loop_seconds", 0)
+    iteration = 0
 
     try:
-        for node in blueprint["nodes"]:
-            node_id = node["id"]
-            print(f"\n{'-' * 60}")
-            print(f"🔵 [WorkflowEngine] Processing node: {node_id}")
-            print(f"📊 [WorkflowEngine] Node data: {node.get('data')}")
+        while True:
+            iteration += 1
+            print(f"\n🔁 [WorkflowEngine] Starting Iteration {iteration}")
 
-            # Mark node as running
-            node_states[node_id] = {"status": "running", "data": None, "error": None}
-            print(f"⏳ [WorkflowEngine] Marking node {node_id} as running")
-            print(f"📊 [WorkflowEngine] Current node_states: {node_states}")
-
-            await ctx.step.run(
-                f"mark_running_{node_id}",
-                lambda ns=node_states.copy(): (
+            # 0. Check for cancellation
+            current_status = await ctx.step.run(
+                f"check_status_{iteration}",
+                lambda: (
                     supabase.table("workflow_logs")
-                    .update({"step_results": ns})
+                    .select("status")
                     .eq("run_id", ctx.run_id)
+                    .single()
                     .execute()
                     .data
                 ),
             )
-            print(f"✅ [WorkflowEngine] Node {node_id} marked as running in Supabase")
 
-            # Execute the node action
-            try:
-                print(f"🚀 [WorkflowEngine] Executing action for node {node_id}")
-                action_result = await ctx.step.run(
-                    f"execute_{node_id}", lambda: perform_action(node["data"], results)
-                )
+            if current_status and current_status.get("status") == "cancelled":
                 print(
-                    f"✅ [WorkflowEngine] Action result for node {node_id}: {action_result}"
+                    "🛑 [WorkflowEngine] Workflow execution cancelled by user request."
                 )
+                break
 
-                # CRITICAL: If the tool returned an error status, we MUST raise an exception
-                # so Inngest knows this step actually failed.
-                if (
-                    isinstance(action_result, dict)
-                    and action_result.get("status") == "error"
-                ):
-                    error_msg = action_result.get("message", "Unknown tool error")
-                    print(f"❌ [WorkflowEngine] Action reported error: {error_msg}")
-                    raise ValueError(f"Node {node_id} failed: {error_msg}")
+            results = {"trigger_data": event_payload}
+            node_states = {}  # Track individual node execution states
+            print(f"📊 [WorkflowEngine] Initial results: {results}")
 
-                # Store the result
-                results[node_id] = action_result
-                print(f"💾 [WorkflowEngine] Stored result for node {node_id}")
+            for node in blueprint["nodes"]:
+                node_id = node["id"]
+                print(f"\n{'-' * 60}")
+                print(f"🔵 [WorkflowEngine] Processing node: {node_id}")
+                print(f"📊 [WorkflowEngine] Node data: {node.get('data')}")
 
-                # Mark node as completed
+                # Mark node as running
                 node_states[node_id] = {
-                    "status": "completed",
-                    "data": action_result,
+                    "status": "running",
+                    "data": None,
                     "error": None,
                 }
-                print(f"✅ [WorkflowEngine] Node {node_id} marked as completed")
+                print(f"⏳ [WorkflowEngine] Marking node {node_id} as running")
 
-            except Exception as node_error:
-                print(f"❌ [WorkflowEngine] Error in node {node_id}: {node_error}")
-                print(f"❌ [WorkflowEngine] Error type: {type(node_error)}")
-                print(f"❌ [WorkflowEngine] Error details: {str(node_error)}")
+                await ctx.step.run(
+                    f"mark_running_{node_id}_{iteration}",
+                    lambda ns=node_states.copy(): (
+                        supabase.table("workflow_logs")
+                        .update({"step_results": ns})
+                        .eq("run_id", ctx.run_id)
+                        .execute()
+                        .data
+                    ),
+                )
+                print(
+                    f"✅ [WorkflowEngine] Node {node_id} marked as running in Supabase"
+                )
 
-                # Mark node as failed
-                node_states[node_id] = {
-                    "status": "failed",
-                    "data": None,
-                    "error": str(node_error),
-                }
-                raise node_error
+                # Execute the node action
+                try:
+                    print(f"🚀 [WorkflowEngine] Executing action for node {node_id}")
 
-            # Update log with current node state
-            print(f"💾 [WorkflowEngine] Updating workflow_logs for node {node_id}")
+                    async def _run_action():
+                        return await perform_action(node["data"], results)
+
+                    action_result = await ctx.step.run(
+                        f"execute_{node_id}_{iteration}",
+                        _run_action,
+                    )
+                    print(
+                        f"✅ [WorkflowEngine] Action result for node {node_id}: {action_result}"
+                    )
+
+                    if (
+                        isinstance(action_result, dict)
+                        and action_result.get("status") == "error"
+                    ):
+                        error_msg = action_result.get("message", "Unknown tool error")
+                        print(f"❌ [WorkflowEngine] Action reported error: {error_msg}")
+                        raise ValueError(f"Node {node_id} failed: {error_msg}")
+
+                    # Store the result
+                    results[node_id] = action_result
+                    print(f"💾 [WorkflowEngine] Stored result for node {node_id}")
+
+                    # Mark node as completed
+                    node_states[node_id] = {
+                        "status": "completed",
+                        "data": action_result,
+                        "error": None,
+                    }
+                    print(f"✅ [WorkflowEngine] Node {node_id} marked as completed")
+
+                except Exception as node_error:
+                    print(f"❌ [WorkflowEngine] Error in node {node_id}: {node_error}")
+
+                    # Mark node as failed
+                    node_states[node_id] = {
+                        "status": "failed",
+                        "data": None,
+                        "error": str(node_error),
+                    }
+
+                    # Update log before raising
+                    await ctx.step.run(
+                        f"update_log_fail_{node_id}_{iteration}",
+                        lambda ns=node_states.copy(): (
+                            supabase.table("workflow_logs")
+                            .update({"step_results": ns})
+                            .eq("run_id", ctx.run_id)
+                            .execute()
+                        ),
+                    )
+                    raise node_error
+
+                # Update log with completed state
+                print(f"💾 [WorkflowEngine] Updating workflow_logs for node {node_id}")
+                await ctx.step.run(
+                    f"update_log_{node_id}_{iteration}",
+                    lambda ns=node_states.copy(): (
+                        supabase.table("workflow_logs")
+                        .update({"step_results": ns})
+                        .eq("run_id", ctx.run_id)
+                        .execute()
+                        .data
+                    ),
+                )
+                print(f"✅ [WorkflowEngine] Workflow log updated for node {node_id}")
+
+            # 3. LOG COMPLETION (for this iteration)
+            print(f"\n{'-' * 60}")
+            print(
+                "✅ [WorkflowEngine] All nodes completed successfully for this iteration"
+            )
+
+            # If not looping, we mark as completed. If looping, we stay 'running'.
+            status_to_set = "running" if loop_seconds > 0 else "completed"
+
+            print(f"💾 [WorkflowEngine] Updating workflow status to: {status_to_set}")
             await ctx.step.run(
-                f"update_log_{node_id}",
-                lambda ns=node_states.copy(): (
+                f"finalize_log_{iteration}",
+                lambda: (
                     supabase.table("workflow_logs")
-                    .update({"step_results": ns})
+                    .update(
+                        {
+                            "status": status_to_set,
+                            "completed_at": datetime.now().isoformat()
+                            if status_to_set == "completed"
+                            else None,
+                        }
+                    )
                     .eq("run_id", ctx.run_id)
                     .execute()
                     .data
                 ),
             )
-            print(f"✅ [WorkflowEngine] Workflow log updated for node {node_id}")
+            print("✅ [WorkflowEngine] Iteration completed successfully")
+            print("=" * 80 + "\n")
 
-        # 3. LOG COMPLETION
-        print(f"\n{'-' * 60}")
-        print("✅ [WorkflowEngine] All nodes completed successfully")
-        print("💾 [WorkflowEngine] Finalizing workflow log")
-        await ctx.step.run(
-            "finalize_log",
-            lambda: (
-                supabase.table("workflow_logs")
-                .update(
-                    {"status": "completed", "completed_at": datetime.now().isoformat()}
-                )
-                .eq("run_id", ctx.run_id)
-                .execute()
-                .data
-            ),
-        )
-        print("✅ [WorkflowEngine] Workflow completed successfully")
-        print("=" * 80 + "\n")
+            if loop_seconds <= 0:
+                print("🏁 [WorkflowEngine] No looping configured. Exiting.")
+                break
+
+            print(
+                f"⏳ [WorkflowEngine] Sleeping for {loop_seconds}s before next iteration..."
+            )
+            await ctx.step.sleep(f"{loop_seconds}s")
 
     except Exception as e:
         print(f"\n{'-' * 60}")

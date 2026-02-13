@@ -18,42 +18,6 @@ const MonitorNode = ({ id, data }) => {
 
   const state = nodeStates[id];
 
-  const getStatusStyles = () => {
-    if (!state) return "border-gray-600 opacity-50 bg-slate-900/50";
-
-    if (state.status === "running") {
-      return "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse bg-blue-900/10";
-    }
-
-    if (state.status === "completed") {
-      return "border-green-500 bg-green-900/10 shadow-[0_0_10px_rgba(34,197,94,0.3)]";
-    }
-
-    if (state.status === "failed") {
-      return "border-red-500 bg-red-900/10 shadow-[0_0_10px_rgba(239,68,68,0.3)]";
-    }
-
-    return "border-gray-400 bg-slate-900/50";
-  };
-
-  const getStatusIcon = () => {
-    if (!state) return null;
-
-    if (state.status === "running") {
-      return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
-    }
-
-    if (state.status === "completed") {
-      return <CheckCircle2 className="w-4 h-4 text-green-400" />;
-    }
-
-    if (state.status === "failed") {
-      return <XCircle className="w-4 h-4 text-red-400" />;
-    }
-
-    return null;
-  };
-
   const getStatusText = () => {
     if (!state) return "Pending";
 
@@ -69,86 +33,178 @@ const MonitorNode = ({ id, data }) => {
     }
   };
 
+  const getStatusStyles = () => {
+    if (!state)
+      return {
+        halo: "opacity-50",
+        border: "border-gray-600/30",
+        dot: "bg-gray-500",
+        progress: "bg-gray-700",
+      };
+
+    if (state.status === "running") {
+      return {
+        halo: "node-halo-blue",
+        border: "border-blue-500/50",
+        dot: "bg-blue-400 animate-pulse",
+        progress: "bg-blue-500",
+      };
+    }
+
+    if (state.status === "completed") {
+      return {
+        halo: "node-halo-emerald",
+        border: "border-emerald-500/50",
+        dot: "bg-emerald-400",
+        progress: "bg-emerald-500",
+      };
+    }
+
+    if (state.status === "failed") {
+      return {
+        halo: "node-halo-pink",
+        border: "border-red-500/50",
+        dot: "bg-red-400",
+        progress: "bg-red-500",
+      };
+    }
+
+    return {
+      halo: "opacity-70",
+      border: "border-gray-500/30",
+      dot: "bg-gray-400",
+      progress: "bg-gray-600",
+    };
+  };
+
+  const statusStyle = getStatusStyles();
+
   return (
     <div
-      className={`min-w-[200px] rounded-xl border-2 backdrop-blur-md transition-all ${getStatusStyles()}`}
+      className={`group relative w-[260px] rounded-xl transition-all duration-500 node-frame ${statusStyle.halo}`}
     >
+      {/* Handles */}
       <Handle
+        id="top"
         type="target"
         position={Position.Top}
-        className="!w-3 !h-3 !bg-gray-600 !border-2 !border-[#030014]"
+        className="!w-2 !h-2 !bg-white !border-none !-top-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity"
+      />
+      <Handle
+        id="left"
+        type="target"
+        position={Position.Left}
+        className="!w-2 !h-2 !bg-white !border-none !-left-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity"
+      />
+      <Handle
+        id="right"
+        type="source"
+        position={Position.Right}
+        className="!w-2 !h-2 !bg-white !border-none !-right-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity"
+      />
+      <Handle
+        id="bottom"
+        type="source"
+        position={Position.Bottom}
+        className="!w-2 !h-2 !bg-white !border-none !-bottom-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity"
       />
 
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between select-none">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-white text-sm">
-            {data.service || data.label}
-          </span>
+      {/* Header Area */}
+      <div className="p-4 pb-2">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[14px] font-bold text-white truncate leading-tight">
+              {data.service || data.label || "Monitor"}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
+                {getStatusText()}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {getStatusIcon()}
-          <span
-            className={`text-xs font-medium ${
-              state?.status === "completed"
-                ? "text-green-400"
-                : state?.status === "failed"
-                  ? "text-red-400"
-                  : state?.status === "running"
-                    ? "text-blue-400"
-                    : "text-gray-500"
-            }`}
-          >
-            {getStatusText()}
-          </span>
+
+        {/* Completion Bar (Live) */}
+        <div className="space-y-1.5 mb-4">
+          <div className="flex justify-between items-end">
+            <span className="text-[10px] font-bold text-white/60 uppercase">
+              Execution
+            </span>
+            <span className="text-[10px] font-bold text-white">
+              {state?.status === "completed"
+                ? "100%"
+                : state?.status === "running"
+                  ? "45%"
+                  : "0%"}
+            </span>
+          </div>
+          <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+            <div
+              className={`h-full ${statusStyle.progress} rounded-full transition-all duration-1000 ${state?.status === "running" ? "animate-progress shadow-[0_0_8px_rgba(59,130,246,0.5)]" : ""}`}
+              style={{
+                width:
+                  state?.status === "completed"
+                    ? "100%"
+                    : state?.status === "running"
+                      ? "45%"
+                      : "0%",
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="p-3 bg-black/20 select-none">
-        <p className="text-[10px] text-slate-400 uppercase tracking-wide">
-          {data.task || data.description || "No task specified"}
+      {/* Body / Task Info */}
+      <div className="px-4 pb-4 space-y-3">
+        <p className="text-[11px] text-gray-400 leading-relaxed italic">
+          "{data.task || data.description || "Executing workflow task..."}"
         </p>
       </div>
 
       {/* Inspect Tray */}
       {state && (state.data || state.error) && (
-        <div className="border-t border-white/5">
+        <div className="border-t border-white/10 bg-white/[0.02]">
           <button
             onClick={() => setInspectOpen(!inspectOpen)}
-            className="w-full px-3 py-2 flex items-center justify-between text-xs text-gray-400 hover:bg-white/5 transition-colors"
+            className="w-full px-4 py-2 flex items-center justify-between text-[11px] text-gray-400 hover:text-white transition-colors"
           >
-            <span>Inspect Data</span>
+            <span className="font-bold uppercase tracking-tighter">
+              Debug Log
+            </span>
             {inspectOpen ? (
-              <ChevronUp className="w-3 h-3" />
+              <ChevronUp className="w-3.5 h-3.5" />
             ) : (
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="w-3.5 h-3.5" />
             )}
           </button>
 
           {inspectOpen && (
-            <div className="px-3 pb-3 max-h-[200px] overflow-auto">
+            <div className="px-4 pb-4 max-h-[200px] overflow-auto scrollbar-thin scrollbar-thumb-white/10">
               {state.error ? (
-                <div className="bg-red-950/30 border border-red-500/20 rounded p-2">
-                  <p className="text-[9px] text-red-300 font-mono">
-                    {state.error}
+                <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-[10px] text-red-300 font-mono break-words leading-relaxed leading-6">
+                    Error: {state.error}
                   </p>
                 </div>
               ) : (
-                <pre className="text-[9px] text-blue-300 font-mono overflow-x-auto bg-slate-950/50 rounded p-2">
-                  {JSON.stringify(state.data, null, 2)}
-                </pre>
+                <div className="relative">
+                  <pre className="text-[10px] text-blue-300 font-mono overflow-x-auto bg-slate-950/40 rounded-lg p-3 border border-white/10">
+                    {JSON.stringify(state.data, null, 2)}
+                  </pre>
+                </div>
               )}
             </div>
           )}
         </div>
       )}
 
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-3 !h-3 !bg-gray-600 !border-2 !border-[#030014]"
-      />
+      {/* Footer Meta */}
+      <div className="px-4 py-2 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
+        <span className="text-[9px] text-gray-600 font-mono">
+          NODE_EXEC_ID: {id?.slice(-6).toUpperCase()}
+        </span>
+      </div>
     </div>
   );
 };

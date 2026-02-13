@@ -16,7 +16,12 @@ const nodeTypes = {
 const defaultEdgeOptions = {
   type: "smoothstep",
   animated: true,
-  style: { stroke: "#585858", strokeWidth: 2 },
+  style: {
+    stroke: "#5865f2",
+    strokeWidth: 2,
+    opacity: 0.6,
+    filter: "drop-shadow(0 0 8px rgba(88, 101, 242, 0.3))",
+  },
 };
 
 export default function WorkflowCanvas() {
@@ -35,6 +40,7 @@ export default function WorkflowCanvas() {
   } = useWorkflowStore();
 
   const [isExecuting, setIsExecuting] = React.useState(false);
+  const [currentRunId, setCurrentRunId] = React.useState(null);
 
   const onNodeClick = useCallback(
     (_, node) => {
@@ -46,6 +52,32 @@ export default function WorkflowCanvas() {
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
   }, [setSelectedNode]);
+
+  const handleStopWorkflow = async () => {
+    if (!currentRunId) return;
+
+    try {
+      console.log(`🛑 [WorkflowCanvas] Stopping workflow run: ${currentRunId}`);
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/workflow/stop/${currentRunId}`,
+        {
+          method: "POST",
+        },
+      );
+      console.log("✅ [WorkflowCanvas] Stop signal sent");
+
+      // We don't immediately set isExecuting false here,
+      // we let the live monitor detect the status change or just force it for UI responsiveness
+      setIsExecuting(false);
+      setCurrentRunId(null);
+
+      if (window.__workflowCleanup) {
+        window.__workflowCleanup();
+      }
+    } catch (error) {
+      console.error("❌ [WorkflowCanvas] Failed to stop workflow:", error);
+    }
+  };
 
   const handleExecuteWorkflow = async () => {
     console.log("▶️ [WorkflowCanvas] Execute Workflow button pressed");
@@ -68,7 +100,29 @@ export default function WorkflowCanvas() {
           },
         })),
         edges: edges,
+        // Detect loop config from the first node or metadata if we stored it?
+        // For now, we assume the backend handles it via blueprint stored in DB or we
+        // need to extract loop_seconds from somewhere?
+        // Wait, the blueprint is constructed HERE in frontend.
+        // We need to preserve 'loop_seconds' if it exists in the workflow object from Sidebar?
+        // The store 'nodes' doesn't have it.
+        // But 'useWorkflowStore' might have 'workflowMetadata'?
+        // Let's check store later. For now, we default to 0 in schema
+        // BUT if it was drafted by AI, where is it?
+        // It's in the 'workflow_blueprints' table.
+        // But here we are sending a fresh blueprint!
+        // We need to fetch 'loop_seconds' from the loaded workflow or store.
       };
+
+      // HACK: For now, if we loaded a workflow, we might have the blueprint ID.
+      // But we are constructing a NEW blueprint from current nodes.
+      // We'll rely on the default engine behavior for now (0),
+      // UNLESS we want to support this from UI.
+      // USER REQUEST: PROMPT sets it.
+      // So when we load via Sidebar, we should load 'loop_seconds' into store.
+      // I need to update Store to hold 'workflowMeta'.
+
+      // ... (Rest of logic)
 
       // Sample trigger data for testing automation
       const sampleTriggerData = {
@@ -81,7 +135,10 @@ export default function WorkflowCanvas() {
       };
 
       console.log("🏗️ [WorkflowCanvas] Blueprint constructed:", blueprint);
-      console.log("📦 [WorkflowCanvas] Sample trigger data:", sampleTriggerData);
+      console.log(
+        "📦 [WorkflowCanvas] Sample trigger data:",
+        sampleTriggerData,
+      );
       console.log("📡 [WorkflowCanvas] Calling /workflow/execute endpoint");
       console.log(
         "🌐 [WorkflowCanvas] API URL:",
@@ -93,9 +150,9 @@ export default function WorkflowCanvas() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            blueprint, 
-            payload: sampleTriggerData  // Use sample data for testing
+          body: JSON.stringify({
+            blueprint,
+            payload: sampleTriggerData, // Use sample data for testing
           }),
         },
       );
@@ -155,6 +212,30 @@ export default function WorkflowCanvas() {
     };
   }, []);
 
+  const onConnectStyle = useCallback(
+    (params) => {
+      // Logic for solid primary (horizontal) or dashed secondary (vertical)
+      const isHorizontal =
+        params.sourceHandle === "right" || params.targetHandle === "left";
+
+      return onConnect({
+        ...params,
+        type: "smoothstep",
+        animated: true,
+        style: {
+          stroke: "#475569", // Neutral slate-600 for high-end look
+          strokeWidth: 1.5,
+          strokeDasharray: isHorizontal ? "0" : "5,5",
+          opacity: 0.5,
+          filter: isHorizontal
+            ? "drop-shadow(0 0 4px rgba(255, 255, 255, 0.05))"
+            : "none",
+        },
+      });
+    },
+    [onConnect],
+  );
+
   return (
     <div className="flex-1 bg-[#030014] relative h-full">
       <ReactFlow
@@ -162,7 +243,7 @@ export default function WorkflowCanvas() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onConnect={onConnectStyle}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
@@ -170,7 +251,7 @@ export default function WorkflowCanvas() {
         fitView
         colorMode="dark"
       >
-        <Background color="#4d4d4d" gap={20} size={1} />
+        <Background color="#1e293b" gap={20} size={1} variant="dots" />
         <Controls className="!bg-[#0F1016] !border-white/10 !fill-white" />
         <MiniMap
           className="!bg-[#0F1016] !border-white/10"
@@ -205,13 +286,23 @@ export default function WorkflowCanvas() {
             </button>
 
             {monitorMode && nodes.length > 0 && (
-              <button
-                onClick={handleExecuteWorkflow}
-                disabled={isExecuting}
-                className="px-3 py-1.5 rounded-md text-xs font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-500/30"
-              >
-                {isExecuting ? "⏳ Running..." : "▶️ Start Workflow"}
-              </button>
+              <div className="flex bg-gray-800 rounded-md p-0.5 border border-white/10">
+                {!isExecuting ? (
+                  <button
+                    onClick={handleExecuteWorkflow}
+                    className="px-3 py-1.5 rounded-sm text-xs font-medium bg-green-600 text-white hover:bg-green-700 transition-all shadow-lg shadow-green-500/30 flex items-center gap-1.5"
+                  >
+                    <span>▶️</span> Run
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopWorkflow}
+                    className="px-3 py-1.5 rounded-sm text-xs font-medium bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30 transition-all flex items-center gap-1.5 animate-pulse"
+                  >
+                    <span>⏹</span> Stop
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

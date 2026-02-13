@@ -13,7 +13,7 @@ export default function WorkflowSidebar() {
   const [savedWorkflows, setSavedWorkflows] = useState([]);
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
   const [showSavedWorkflows, setShowSavedWorkflows] = useState(false);
-  
+
   const { setElements, nodes, edges } = useWorkflowStore();
 
   // Load saved workflows on component mount
@@ -26,12 +26,12 @@ export default function WorkflowSidebar() {
     try {
       const { api } = await import("@/lib/axios");
       const { useAuthStore } = await import("@/store/authStore");
-      
+
       const user = useAuthStore.getState().user;
       if (!user) return;
 
       const response = await api.get("/workflows", {
-        params: { user_id: user.id }
+        params: { user_id: user.id },
       });
 
       setSavedWorkflows(response.data.workflows || []);
@@ -100,21 +100,24 @@ export default function WorkflowSidebar() {
       console.log("📊 [WorkflowSidebar] Nodes count:", workflow.nodes?.length);
       console.log("🔗 [WorkflowSidebar] Edges count:", workflow.edges?.length);
 
-      // Ensure nodes have the correct type for our custom components
       const formattedNodes = workflow.nodes.map((node) => ({
         ...node,
         type: "workflowNode",
       }));
 
-      console.log("🎨 [WorkflowSidebar] Formatted nodes:", formattedNodes);
-      console.log("💾 [WorkflowSidebar] Setting elements to store");
+      const formattedEdges = (workflow.edges || []).map((edge) => ({
+        ...edge,
+        sourceHandle: edge.sourceHandle || "right",
+        targetHandle: edge.targetHandle || "left",
+        animated: true,
+      }));
 
-      setElements(formattedNodes, workflow.edges);
+      setElements(formattedNodes, formattedEdges);
 
       console.log("✨ [WorkflowSidebar] Workflow generation complete!");
       toast.success("Workflow generated successfully!");
       setPrompt("");
-      
+
       // Refresh saved workflows list
       loadSavedWorkflows();
     } catch (error) {
@@ -157,30 +160,31 @@ export default function WorkflowSidebar() {
       console.log("📊 [WorkflowSidebar] Nodes:", nodes.length);
       console.log("🔗 [WorkflowSidebar] Edges:", edges.length);
 
-      const response = await api.post("/workflow/save", 
-        { 
-          blueprint: { 
-            nodes: nodes.map(node => ({
+      const response = await api.post(
+        "/workflow/save",
+        {
+          blueprint: {
+            nodes: nodes.map((node) => ({
               id: node.id,
               type: node.data.type || "action",
               data: node.data,
-              position: node.position
-            })), 
-            edges 
-          } 
+              position: node.position,
+            })),
+            edges,
+          },
         },
-        { 
-          params: { 
-            user_id: user.id, 
-            workflow_name: workflowName 
-          } 
-        }
+        {
+          params: {
+            user_id: user.id,
+            workflow_name: workflowName,
+          },
+        },
       );
 
       console.log("✅ [WorkflowSidebar] Workflow saved:", response.data);
       toast.success("Workflow saved successfully!");
       setWorkflowName("");
-      
+
       // Refresh saved workflows list
       loadSavedWorkflows();
     } catch (error) {
@@ -194,14 +198,21 @@ export default function WorkflowSidebar() {
   const handleLoadWorkflow = async (workflow) => {
     try {
       console.log("📂 [WorkflowSidebar] Loading workflow:", workflow.name);
-      
-      // Ensure nodes have the correct type for our custom components
+
+      // Ensure nodes have the correct type and edges use sideways handles
       const formattedNodes = workflow.nodes.map((node) => ({
         ...node,
         type: "workflowNode",
       }));
 
-      setElements(formattedNodes, workflow.edges);
+      const formattedEdges = (workflow.edges || []).map((edge) => ({
+        ...edge,
+        sourceHandle: edge.sourceHandle || "right",
+        targetHandle: edge.targetHandle || "left",
+        animated: true,
+      }));
+
+      setElements(formattedNodes, formattedEdges);
       toast.success(`Loaded workflow: ${workflow.name}`);
       setShowSavedWorkflows(false);
     } catch (error) {
@@ -291,7 +302,9 @@ export default function WorkflowSidebar() {
               />
               <button
                 onClick={handleSaveWorkflow}
-                disabled={!workflowName.trim() || isSaving || nodes.length === 0}
+                disabled={
+                  !workflowName.trim() || isSaving || nodes.length === 0
+                }
                 className={`w-full py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                   !workflowName.trim() || isSaving || nodes.length === 0
                     ? "bg-gray-700 text-gray-500 cursor-not-allowed"
@@ -350,7 +363,8 @@ export default function WorkflowSidebar() {
                             {workflow.name}
                           </h4>
                           <p className="text-xs text-gray-500">
-                            {workflow.nodes?.length || 0} nodes • {new Date(workflow.created_at).toLocaleDateString()}
+                            {workflow.nodes?.length || 0} nodes •{" "}
+                            {new Date(workflow.created_at).toLocaleDateString()}
                           </p>
                         </div>
                         <div className="flex items-center gap-1 ml-2">
@@ -362,7 +376,9 @@ export default function WorkflowSidebar() {
                             <FolderOpen className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDeleteWorkflow(workflow.id, workflow.name)}
+                            onClick={() =>
+                              handleDeleteWorkflow(workflow.id, workflow.name)
+                            }
                             className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
                             title="Delete workflow"
                           >
