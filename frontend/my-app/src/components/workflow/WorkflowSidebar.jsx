@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import useWorkflowStore from "@/store/workflowStore";
 import { useAuthStore } from "@/store/authStore";
 import { toast } from "react-hot-toast";
+import { applyAutoLayout } from "@/lib/autoLayout";
 
 export default function WorkflowSidebar() {
   const [prompt, setPrompt] = useState("");
@@ -126,7 +127,10 @@ export default function WorkflowSidebar() {
         animated: true,
       }));
 
-      setElements(formattedNodes, formattedEdges);
+      // Apply auto-layout to arrange nodes systematically
+      const layoutedNodes = applyAutoLayout(formattedNodes, formattedEdges);
+
+      setElements(layoutedNodes, formattedEdges);
 
       console.log("✨ [WorkflowSidebar] Workflow generation complete!");
       toast.success("Workflow generated successfully!");
@@ -236,7 +240,10 @@ export default function WorkflowSidebar() {
         formattedEdges.length,
       );
 
-      setElements(formattedNodes, formattedEdges);
+      // Apply auto-layout to arrange nodes systematically
+      const layoutedNodes = applyAutoLayout(formattedNodes, formattedEdges);
+
+      setElements(layoutedNodes, formattedEdges);
       toast.success(`Loaded workflow: ${workflow.name}`);
       // Don't hide the list anymore
       // setShowSavedWorkflows(false);

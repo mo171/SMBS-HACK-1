@@ -283,7 +283,7 @@ function WorkflowCanvasContent() {
         fitView
         colorMode="dark"
       >
-        <Background color="#1e293b" gap={20} size={1} variant="dots" />
+        <Background color="#4a5568" gap={18} size={1.2} variant="dots" />
         <Controls className="!bg-[#0F1016] !border-white/10 !fill-white" />
         <MiniMap
           className="!bg-[#0F1016] !border-white/10"
