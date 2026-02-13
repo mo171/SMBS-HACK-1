@@ -37,7 +37,7 @@ class WorkflowArchitect:
 
         system_msg = (
             "You are a Business Workflow Architect. Convert the user's request into a structured graph with proper automation. "
-            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic, pixelfed, instagram. "
+            "Available Services: razorpay, whatsapp, google_sheets, timer, shiprocket, bluesky, social_logic, pixelfed, instagram, database, gpt. "
             "Ensure every node has a unique 'id' and 'position'. "
             "IMPORTANT: Automatically set up variable mappings between nodes for full automation. "
             "PHONE NUMBERS: Always look for phone numbers in the trigger_data. If the user mentions a specific number, use it. "
@@ -70,14 +70,29 @@ class WorkflowArchitect:
             "For 'google_sheets' service with 'append_data' task, include params: "
             "spreadsheet_id ('{{env.DEFAULT_SPREADSHEET_ID}}' or '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'), "
             "sheet_name ('Sheet1' or 'Class Data'), "
-            'data (\'{{"name": "{{trigger_data.customer_name}}", "status": "Success"}}\' or similar structured object). '
+            'data (\'{"name": "{{trigger_data.customer_name}}", "status": "Success"}\' or similar structured object). '
+            "DATABASE LOGIC: If user mentions 'check database', 'query users', 'find records', 'who hasn't paid', 'unpaid users', include a 'database' node. "
+            "For 'database' service with 'query_table' task, include params: "
+            "table (table name like 'users', 'orders', 'payments'), "
+            'filters (dict like {"status": "unpaid", "payment_due": true}), '
+            "select (columns like 'name, email, phone, amount' or '*'). "
+            '{"table": "users", "filters": {"payment_status": "unpaid"}, "select": "name, phone, amount_due"}. '
+            "Use database results in next nodes via {{database_1.results}} or {{database_1.data}}. "
+            "GPT/AI PROCESSING: If user mentions 'analyze', 'summarize', 'create post', 'write caption', 'format data', 'make it engaging', include a 'gpt' node BEFORE posting/messaging nodes. "
+            "For 'gpt' service with 'process_text' task, include params: "
+            "input_data (data to process, use {{database_1.results}} or {{trigger_data.info}}), "
+            "persona (brand voice: 'professional', 'friendly', 'creative', 'casual', or custom like 'sustainable fashion brand'), "
+            "instructions (specific task like 'Create an engaging social media post summarizing this data with emojis'), "
+            "output_format ('text', 'json', 'markdown'). "
+            'Example: {"service": "gpt", "task": "process_text", "params": {"input_data": "{{database_1.results}}", "persona": "friendly", "instructions": "Summarize weekly sales into engaging Bluesky post", "output_format": "text"}}. '
+            "Use GPT output in next nodes via {{gpt_1.processed_text}}. "
             "For 'timer' service, include params: duration (number). "
             "Always use variable references like {{trigger_data.field}} and {{node_id.field}} to connect data between nodes. "
             "Set realistic positions with proper spacing (x: 100, 200... y: 100, 200...). "
-            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1', 'pixelfed_1'."
-            "LOOPING/RECURRING TASKS: If the user says 'every X seconds', 'repeat every X minutes', or 'loop every X hours', "
+            "Create meaningful node IDs like 'razorpay_1', 'whatsapp_1', 'sheets_1', 'shiprocket_1', 'pixelfed_1', 'database_1', 'gpt_1'."
+            "LOOPING/RECURRING TASKS: If the user says 'every X seconds', 'repeat every X minutes', 'loop every X hours', 'every day', or 'daily', "
             "set the blueprint's 'loop_seconds' field to the interval in seconds. "
-            "Example: 'every 5 seconds' -> loop_seconds = 5. 'every 1 minute' -> loop_seconds = 60. "
+            "Example: 'every 5 seconds' -> loop_seconds = 5. 'every 1 minute' -> loop_seconds = 60. 'every day' or 'daily' -> loop_seconds = 86400. "
             "If no repetition is mentioned, keep loop_seconds = 0."
         )
         print("🔮 [WorkflowArchitect] Invoking LLM with structured output")

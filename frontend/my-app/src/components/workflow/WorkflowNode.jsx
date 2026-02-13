@@ -11,6 +11,7 @@ import {
   MessageCircle, // WhatsApp icon
   CreditCard, // Razorpay icon
   FileSpreadsheet, // Google Sheets icon
+  Sparkles, // GPT/AI icon
 } from "lucide-react";
 
 const NODE_CONFIG = {
@@ -41,6 +42,13 @@ const NODE_CONFIG = {
     halo: "node-halo-emerald",
     border: "border-emerald-500/40",
     progress: "bg-emerald-500",
+  },
+  gpt: {
+    icon: Sparkles,
+    color: "text-purple-400",
+    halo: "node-halo-purple",
+    border: "border-purple-500/40",
+    progress: "bg-purple-500",
   },
   whatsapp: {
     icon: MessageCircle,
