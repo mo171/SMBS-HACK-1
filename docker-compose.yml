@@ -29,6 +29,17 @@ services:
     networks:
       - app-network
 
+  inngest:
+    image: inngest/inngest:latest
+    container_name: inngest
+    ports:
+      - "8288:8288"
+    environment:
+      - INNGEST_EVENT_KEY=local
+      - INNGEST_SIGNING_KEY=local
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge

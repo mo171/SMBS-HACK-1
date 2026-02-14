@@ -61,6 +61,7 @@ switch ($choice) {
         Write-Host "🌐 Frontend: http://localhost:3000" -ForegroundColor Cyan
         Write-Host "📡 Backend: http://localhost:8000" -ForegroundColor Cyan
         Write-Host "📚 API Docs: http://localhost:8000/docs" -ForegroundColor Cyan
+        Write-Host "⚡ Inngest: http://localhost:8288" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "To view logs, run: docker-compose logs -f" -ForegroundColor Yellow
     }
@@ -72,6 +73,7 @@ switch ($choice) {
         Write-Host "✅ Containers started!" -ForegroundColor Green
         Write-Host "🌐 Frontend: http://localhost:3000" -ForegroundColor Cyan
         Write-Host "📡 Backend: http://localhost:8000" -ForegroundColor Cyan
+        Write-Host "⚡ Inngest: http://localhost:8288" -ForegroundColor Cyan
     }
     "3" {
         Write-Host ""
