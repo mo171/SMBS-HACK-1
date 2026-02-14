@@ -8,6 +8,7 @@ before posting to social media or sending messages.
 from openai import AsyncOpenAI
 import os
 from typing import Dict, Any, Optional
+from .base import BaseTool
 
 
 # Pre-defined personas for common use cases
@@ -21,15 +22,16 @@ DEFAULT_PERSONAS = {
 }
 
 
-class GPTTool:
+class GPTTool(BaseTool):
     def __init__(self):
         """Initialize OpenAI client for GPT processing."""
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-
-        self.client = AsyncOpenAI(api_key=api_key)
-        print("✅ [GPTTool] Initialized")
+            print("⚠️ [GPTTool] Warning: OPENAI_API_KEY not set")
+            self.client = None
+        else:
+            self.client = AsyncOpenAI(api_key=api_key)
+            print("✅ [GPTTool] Initialized")
 
     @property
     def service_name(self) -> str:
@@ -40,9 +42,16 @@ class GPTTool:
         print(f"\n🧠 [GPTTool] Executing task: {task}")
         print(f"📊 [GPTTool] Parameters: {params}")
 
+        if not self.client:
+            return {
+                "status": "error",
+                "message": "OpenAI client not initialized. Check OPENAI_API_KEY",
+            }
+
         try:
-            if task == "process_text":
-                result = await self.process_text(
+            # Support both process_text and process_data for backward compatibility
+            if task in ["process_text", "process_data"]:
+                result = await self._process(
                     input_data=params.get("input_data", ""),
                     persona=params.get("persona"),
                     output_format=params.get("output_format", "text"),
@@ -57,7 +66,7 @@ class GPTTool:
             print(f"❌ [GPTTool] Execution error: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def process_text(
+    async def _process(
         self,
         input_data: str,
         persona: Optional[str] = None,
@@ -77,16 +86,8 @@ class GPTTool:
 
         Returns:
             Dict with processed_text and metadata
-
-        Example:
-            result = await process_text(
-                input_data='{"sales": 1000, "orders": 50}',
-                persona="friendly",
-                instructions="Create an engaging weekly summary post",
-                output_format="text"
-            )
         """
-        print(f"🧠 [GPTTool] Processing text with persona: {persona}")
+        print(f"🧠 [GPTTool] Processing with persona: {persona}")
         print(f"📋 [GPTTool] Instructions: {instructions}")
         print(f"📊 [GPTTool] Output format: {output_format}")
 
@@ -146,7 +147,3 @@ class GPTTool:
         except Exception as e:
             print(f"❌ [GPTTool] Processing error: {e}")
             raise Exception(f"GPT processing failed: {str(e)}")
-
-
-# Export for tool registry
-__all__ = ["GPTTool"]

@@ -33,3 +33,16 @@ def resolve_variables(text: str, context: Dict[str, Any]) -> str:
         return str(value)
 
     return re.sub(pattern, replace, text)
+
+
+def resolve_recursive(data: Any, context: Dict[str, Any]) -> Any:
+    """
+    Recursively resolves variables in strings, dictionaries, and lists.
+    """
+    if isinstance(data, str):
+        return resolve_variables(data, context)
+    elif isinstance(data, dict):
+        return {k: resolve_recursive(v, context) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [resolve_recursive(item, context) for item in data]
+    return data

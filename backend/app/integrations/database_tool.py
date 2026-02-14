@@ -8,15 +8,21 @@ Example: Query unpaid users, then send reminders.
 from supabase import create_client
 import os
 from typing import Dict, Any, List, Optional
+from .base import BaseTool
 
 
-class DatabaseTool:
+class DatabaseTool(BaseTool):
     def __init__(self):
         """Initialize Supabase client for database queries."""
-        self.supabase = create_client(
-            os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
-        )
-        print("✅ [DatabaseTool] Initialized")
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+
+        if not supabase_url or not supabase_key:
+            print("⚠️ [DatabaseTool] Warning: Supabase credentials not set")
+            self.supabase = None
+        else:
+            self.supabase = create_client(supabase_url, supabase_key)
+            print("✅ [DatabaseTool] Initialized")
 
     @property
     def service_name(self) -> str:
@@ -26,6 +32,12 @@ class DatabaseTool:
         """Execute database task based on task name."""
         print(f"\n🗄️ [DatabaseTool] Executing task: {task}")
         print(f"📊 [DatabaseTool] Parameters: {params}")
+
+        if not self.supabase:
+            return {
+                "status": "error",
+                "message": "Supabase client not initialized. Check SUPABASE_URL and SUPABASE_KEY",
+            }
 
         try:
             if task == "query_table":
@@ -61,13 +73,6 @@ class DatabaseTool:
 
         Returns:
             List of matching rows
-
-        Example:
-            results = await query_table(
-                table="users",
-                filters={"payment_status": "unpaid"},
-                select="name, email, phone, amount_due"
-            )
         """
         print(f"🔍 [DatabaseTool] Querying table: {table}")
         print(f"📊 [DatabaseTool] Filters: {filters}")
@@ -94,7 +99,3 @@ class DatabaseTool:
         except Exception as e:
             print(f"❌ [DatabaseTool] Query error: {e}")
             raise Exception(f"Database query failed: {str(e)}")
-
-
-# Export for tool registry
-__all__ = ["DatabaseTool"]
