@@ -690,5 +690,205 @@ class ActionService:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    async def generate_overall_ledger_pdf(self):
+        """Generates a detailed PDF of all transactions (Invoices and Payments)."""
+        try:
+            # 1. Fetch Invoices
+            inv_res = (
+                self.supabase.table("invoices")
+                .select("*, customers(full_name)")
+                .order("created_at", desc=False)
+                .execute()
+            )
+            invoices = inv_res.data
+
+            # 2. Fetch Payments
+            pay_res = (
+                self.supabase.table("payments")
+                .select("*, customers(full_name)")
+                .order("created_at", desc=False)
+                .execute()
+            )
+            payments = pay_res.data
+
+            # 3. Combine and Sort by Date
+            transactions = []
+            for inv in invoices:
+                transactions.append(
+                    {
+                        "date": inv["created_at"],
+                        "name": inv.get("customers", {}).get("full_name", "N/A"),
+                        "type": "Invoice",
+                        "ref": inv["id"][:8],
+                        "debit": float(inv["total_amount"]),
+                        "credit": 0.0,
+                    }
+                )
+            for pay in payments:
+                transactions.append(
+                    {
+                        "date": pay["created_at"],
+                        "name": pay.get("customers", {}).get("full_name", "N/A"),
+                        "type": "Payment",
+                        "ref": pay["id"][:8],
+                        "debit": 0.0,
+                        "credit": float(pay["amount_received"]),
+                    }
+                )
+
+            # Sort by date
+            transactions.sort(key=lambda x: x["date"])
+
+            # 4. Generate PDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Times", "B", 18)
+            pdf.cell(
+                0,
+                15,
+                "OVERALL BUSINESS LEDGER",
+                new_x="LMARGIN",
+                new_y="NEXT",
+                align="C",
+            )
+            pdf.set_font("Times", "", 10)
+
+            # Use socket.gethostname() for Windows compatibility
+            import socket
+
+            hostname = socket.gethostname()
+            pdf.cell(
+                0,
+                7,
+                f"Run Date: {hostname}",
+                new_x="LMARGIN",
+                new_y="NEXT",
+                align="R",
+            )
+            pdf.ln(5)
+
+            # Table Header
+            pdf.set_font("Times", "B", 10)
+            pdf.set_fill_color(240, 240, 240)
+            headers = [
+                "Date",
+                "Customer / Description",
+                "Type",
+                "Ref",
+                "Debit (+)",
+                "Credit (-)",
+            ]
+            widths = [25, 65, 20, 20, 30, 30]
+
+            for i in range(len(headers)):
+                pdf.cell(widths[i], 10, headers[i], 1, 0, "C", True)
+            pdf.ln()
+
+            # Table Content
+            pdf.set_font("Times", "", 9)
+            running_balance = 0.0
+            for tx in transactions:
+                running_balance += tx["debit"] - tx["credit"]
+
+                # Ensure name is string and handle potential encoding issues
+                cust_name = (
+                    str(tx["name"]).encode("latin-1", "replace").decode("latin-1")
+                )
+
+                pdf.cell(widths[0], 8, str(tx["date"])[:10], 1)
+                pdf.cell(widths[1], 8, cust_name, 1)
+                pdf.cell(widths[2], 8, tx["type"], 1, 0, "C")
+                pdf.cell(widths[3], 8, tx["ref"], 1, 0, "C")
+                pdf.cell(
+                    widths[4],
+                    8,
+                    f"{tx['debit']:,.2f}" if tx["debit"] > 0 else "-",
+                    1,
+                    0,
+                    "R",
+                )
+                pdf.cell(
+                    widths[5],
+                    8,
+                    f"{tx['credit']:,.2f}" if tx["credit"] > 0 else "-",
+                    1,
+                    1,
+                    "R",
+                )
+
+            # Final Summary
+            pdf.ln(5)
+            pdf.set_font("Times", "B", 11)
+            total_billed = sum(t["debit"] for t in transactions)
+            total_paid = sum(t["credit"] for t in transactions)
+
+            pdf.cell(130, 10, "Total Billed Amount:", 0, 0, "R")
+            pdf.cell(60, 10, f"Rs. {total_billed:,.2f}", 1, 1, "R")
+            pdf.cell(130, 10, "Total Received Amount:", 0, 0, "R")
+            pdf.cell(60, 10, f"Rs. {total_paid:,.2f}", 1, 1, "R")
+            pdf.set_text_color(200, 0, 0)
+            pdf.cell(130, 10, "NET OUTSTANDING BALANCE:", 0, 0, "R")
+            pdf.cell(60, 10, f"Rs. {total_billed - total_paid:,.2f}", 1, 1, "R")
+
+            return bytes(pdf.output())
+        except Exception as e:
+            print(f"!!! Error generating overall ledger PDF: {e}")
+            raise e
+
+    async def generate_aging_debtors_excel(self):
+        """Generates Aging Report: Categorizes debt by days (0-30, 31-60, etc.)"""
+        try:
+            # 1. Fetch Invoices and Payments to calculate aging
+            # Simpler approach: Use the total_debt already calculated in 'customers' table
+            # But the user might want it "by invoice age".
+            # To be accurate, we'd need to look at 'invoices' where 'status=pending'.
+
+            inv_res = (
+                self.supabase.table("invoices")
+                .select("*, customers(full_name)")
+                .neq("status", "paid")  # Assuming status might be 'paid' eventually
+                .execute()
+            )
+
+            aging_data = []
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+
+            for inv in inv_res.data:
+                total = float(inv["total_amount"] or 0)
+                paid = float(inv["amount_paid"] or 0)
+                due = total - paid
+
+                if due > 0:
+                    created_at = datetime.fromisoformat(
+                        inv["created_at"].replace("Z", "+00:00")
+                    )
+                    days_old = (now - created_at).days
+
+                    row = {
+                        "Customer": inv.get("customers", {}).get("full_name", "N/A"),
+                        "Invoice ID": inv["id"][:8],
+                        "Date": inv["created_at"][:10],
+                        "Amount Due": due,
+                        "0-30 Days": due if days_old <= 30 else 0,
+                        "31-60 Days": due if 30 < days_old <= 60 else 0,
+                        "61-90 Days": due if 60 < days_old <= 90 else 0,
+                        "90+ Days": due if days_old > 90 else 0,
+                    }
+                    aging_data.append(row)
+
+            df = pd.DataFrame(aging_data)
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Aging Debtors")
+
+            output.seek(0)
+            return output.read()
+        except Exception as e:
+            print(f"!!! Error generating aging debtors excel: {e}")
+            raise e
+
 
 action_service = ActionService()

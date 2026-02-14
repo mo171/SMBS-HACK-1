@@ -34,6 +34,12 @@ export default function ReportsPage() {
       } else if (type === "invoice-excel") {
         url = `/export/invoice-excel/${id}`;
         filename = `invoice_${id}.xlsx`;
+      } else if (type === "ledger") {
+        url = "/export/overall-ledger";
+        filename = "overall_ledger.pdf";
+      } else if (type === "aging") {
+        url = "/export/aging-debtors";
+        filename = "aging_debtors.xlsx";
       }
 
       const response = await api.get(url, { responseType: "blob" });
@@ -86,8 +92,8 @@ export default function ReportsPage() {
           title="Overall Ledger"
           desc="Summary of all billed and received payments."
           format="PDF"
-          tag="Coming Soon"
-          disabled={true}
+          onDownload={() => downloadReport("ledger")}
+          loading={loading["ledger"]}
         />
 
         {/* Debtor List */}
@@ -96,8 +102,8 @@ export default function ReportsPage() {
           title="Aging Debtors"
           desc="Detailed list of all customers with outstanding balance."
           format="EXCEL"
-          tag="Coming Soon"
-          disabled={true}
+          onDownload={() => downloadReport("aging")}
+          loading={loading["aging"]}
         />
       </div>
 
