@@ -850,44 +850,162 @@ class ActionService:
                 .execute()
             )
 
-            aging_data = []
-            from datetime import datetime, timezone
+            if not inv_res.data:
+                return None
 
-            now = datetime.now(timezone.utc)
+            # Calculate age and bucketize
+            data = []
+            now = pd.Timestamp.now()
 
             for inv in inv_res.data:
-                total = float(inv["total_amount"] or 0)
-                paid = float(inv["amount_paid"] or 0)
-                due = total - paid
+                created_at = pd.to_datetime(inv["created_at"]).tz_localize(None)
+                days_old = (now - created_at).days
+                amount_due = float(inv["total_amount"] or 0) - float(
+                    inv["amount_paid"] or 0
+                )
 
-                if due > 0:
-                    created_at = datetime.fromisoformat(
-                        inv["created_at"].replace("Z", "+00:00")
-                    )
-                    days_old = (now - created_at).days
+                if amount_due <= 0:
+                    continue
 
-                    row = {
-                        "Customer": inv.get("customers", {}).get("full_name", "N/A"),
-                        "Invoice ID": inv["id"][:8],
-                        "Date": inv["created_at"][:10],
-                        "Amount Due": due,
-                        "0-30 Days": due if days_old <= 30 else 0,
-                        "31-60 Days": due if 30 < days_old <= 60 else 0,
-                        "61-90 Days": due if 60 < days_old <= 90 else 0,
-                        "90+ Days": due if days_old > 90 else 0,
-                    }
-                    aging_data.append(row)
+                row = {
+                    "Customer": inv["customers"]["full_name"],
+                    "Invoice ID": inv["id"],
+                    "Date": str(inv["created_at"])[:10],
+                    "Amount Due": amount_due,
+                    "0-30 Days": amount_due if days_old <= 30 else 0,
+                    "31-60 Days": amount_due if 30 < days_old <= 60 else 0,
+                    "61-90 Days": amount_due if 60 < days_old <= 90 else 0,
+                    "90+ Days": amount_due if days_old > 90 else 0,
+                }
+                data.append(row)
 
-            df = pd.DataFrame(aging_data)
-
+            df = pd.DataFrame(data)
             output = BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 df.to_excel(writer, index=False, sheet_name="Aging Debtors")
-
-            output.seek(0)
-            return output.read()
+            return output.getvalue()
         except Exception as e:
             print(f"!!! Error generating aging debtors excel: {e}")
+            raise e
+
+    # --- NEW: INTEGRATION ACTIONS ---
+    async def create_payment_link(self, amount, customer_name, description):
+        """Creates a Razorpay payment link using the modular tool."""
+        from integrations import TOOL_REGISTRY
+
+        tool = TOOL_REGISTRY.get("razorpay")
+        if not tool:
+            return {"status": "error", "message": "Razorpay tool not found"}
+
+        return await tool.execute(
+            "create_payment_link",
+            {
+                "amount": amount,
+                "customer_name": customer_name,
+                "description": description,
+            },
+        )
+
+    async def post_social_content(self, platform, content, image_url=None):
+        """Posts content to Pixelfed or Bluesky using modular tools."""
+        from integrations import TOOL_REGISTRY
+
+        tool = TOOL_REGISTRY.get(platform)
+        if not tool:
+            return {"status": "error", "message": f"Tool for {platform} not found"}
+
+        # Pixelfed FALLBACK and Robustness logic
+        if platform == "pixelfed":
+            # If image_url is missing or a descriptive placeholder, use env fallback
+            placeholders = ["default", "default one", "use default", "default image"]
+            if not image_url or any(p in str(image_url).lower() for p in placeholders):
+                image_url = os.getenv("DEFAULT_PIXELFED_IMAGE_URL")
+
+            # Final validation: Pixelfed MUST have a valid http/https image URL
+            if not image_url or not str(image_url).startswith("http"):
+                return {
+                    "status": "error",
+                    "message": "No media provided. Pixelfed requires a valid image URL (starting with http:// or https://).",
+                }
+
+        task = "publish_post" if platform == "pixelfed" else "post_content"
+        params = (
+            {"caption": content, "image_url": image_url}
+            if platform == "pixelfed"
+            else {"text": content}
+        )
+
+        return await tool.execute(task, params)
+
+    async def generate_overall_ledger_excel(self):
+        """Generates the overall ledger as an Excel file."""
+        try:
+            # Reusing logic from generate_overall_ledger_pdf
+            inv_res = (
+                self.supabase.table("invoices")
+                .select("id, created_at, total_amount, customers(full_name)")
+                .execute()
+            )
+            pay_res = (
+                self.supabase.table("payments")
+                .select(
+                    "id, created_at, amount_received, payment_mode, customers(full_name)"
+                )
+                .execute()
+            )
+
+            transactions = []
+            for inv in inv_res.data:
+                transactions.append(
+                    {
+                        "date": inv["created_at"],
+                        "name": inv["customers"]["full_name"],
+                        "type": "Invoice",
+                        "ref": f"INV-{inv['id'][:4].upper()}",
+                        "debit": float(inv["total_amount"] or 0),
+                        "credit": 0.0,
+                    }
+                )
+
+            for p in pay_res.data:
+                transactions.append(
+                    {
+                        "date": p["created_at"],
+                        "name": p["customers"]["full_name"],
+                        "type": "Payment",
+                        "ref": p["payment_mode"] or "Cash",
+                        "debit": 0.0,
+                        "credit": float(p["amount_received"] or 0),
+                    }
+                )
+
+            transactions.sort(key=lambda x: x["date"])
+
+            # Calculate Running Balance
+            running_balance = 0.0
+            for tx in transactions:
+                running_balance += tx["debit"] - tx["credit"]
+                tx["balance"] = running_balance
+                tx["date"] = str(tx["date"])[:10]  # Clean date for excel
+
+            df = pd.DataFrame(transactions)
+            # Rename columns for better excel view
+            df.columns = [
+                "Date",
+                "Customer",
+                "Type",
+                "Ref",
+                "Debit",
+                "Credit",
+                "Running Balance",
+            ]
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Overall Ledger")
+            return output.getvalue()
+        except Exception as e:
+            print(f"!!! Error generating overall ledger excel: {e}")
             raise e
 
 

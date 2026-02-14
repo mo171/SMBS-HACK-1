@@ -1,4 +1,14 @@
-import { User, Sparkles, Check, X, Loader2, FileText } from "lucide-react";
+import {
+  User,
+  Sparkles,
+  Check,
+  X,
+  Loader2,
+  FileText,
+  CreditCard,
+  Share2,
+  ExternalLink,
+} from "lucide-react";
 import Image from "next/image";
 import InvoiceCard from "./cards/InvoiceCard";
 import StockCard from "./cards/StockCard";
@@ -93,19 +103,29 @@ export default function MessageBubble({ message }) {
                 <FileText className="w-6 h-6 text-green-500" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">
-                  Inventory Report Ready
+                <h3 className="text-sm font-bold text-white capitalize">
+                  {message.data?.report_type || "Inventory"} Report Ready
                 </h3>
                 <p className="text-[11px] text-gray-400">
-                  Ready to download as Excel
+                  Ready to download as {message.data?.format || "Excel"}
                 </p>
               </div>
             </div>
             <button
               onClick={async () => {
                 try {
-                  await chatService.downloadInventory();
-                  toast.success("Downloading Inventory Report...");
+                  const type = message.data?.report_type || "inventory";
+                  const format = message.data?.format || "excel";
+
+                  if (type === "ledger") {
+                    if (format === "pdf") await chatService.downloadLedgerPDF();
+                    else await chatService.downloadLedgerExcel();
+                  } else if (type === "debtors") {
+                    await chatService.downloadDebtorsExcel();
+                  } else {
+                    await chatService.downloadInventory();
+                  }
+                  toast.success(`Downloading ${type} report...`);
                 } catch (error) {
                   toast.error("Failed to download report");
                   console.error(error);
@@ -114,8 +134,65 @@ export default function MessageBubble({ message }) {
               className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-green-600/10"
             >
               <Sparkles className="w-3 h-3" />
-              Download Excel
+              Download {message.data?.format || "Excel"}
             </button>
+          </div>
+        )}
+
+        {message.type === "GENERATE_PAYMENT_LINK" && (
+          <div className="mt-3 w-full max-w-[320px] bg-[#0F1016] border border-white/5 rounded-xl p-5 flex flex-col gap-4 transition-all duration-300">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <CreditCard className="w-6 h-6 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  Payment Link Ready
+                </h3>
+                <p className="text-[11px] text-gray-400">
+                  Amount: Rs. {message.data?.amount} for{" "}
+                  {message.data?.customer_name}
+                </p>
+              </div>
+            </div>
+            <a
+              href={message.data?.payment_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-600/10 text-center"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Open Payment Link
+            </a>
+          </div>
+        )}
+
+        {message.type === "POST_SOCIAL" && (
+          <div className="mt-3 w-full max-w-[320px] bg-[#0F1016] border border-white/5 rounded-xl p-5 flex flex-col gap-4 transition-all duration-300">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-pink-500/10 flex items-center justify-center">
+                <Share2 className="w-6 h-6 text-pink-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white capitalize">
+                  Posted to {message.data?.platform}
+                </h3>
+                <p className="text-[11px] text-gray-400 line-clamp-1">
+                  {message.data?.content}
+                </p>
+              </div>
+            </div>
+            {message.data?.url && (
+              <a
+                href={message.data?.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-pink-600 hover:bg-pink-700 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-pink-600/10 text-center"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View Post
+              </a>
+            )}
           </div>
         )}
 

@@ -76,7 +76,28 @@ class RecordPaymentIntent(BaseModel):
 class GenerateReportIntent(BaseModel):
     report_type: str = Field(
         default="inventory",
-        description="The type of report: 'inventory', 'sales', etc.",
+        description="The type of report: 'inventory', 'ledger', 'debtors', etc.",
+    )
+    format: Optional[str] = Field(
+        default="excel", description="The format: 'excel' or 'pdf'."
+    )
+
+
+class GeneratePaymentLinkIntent(BaseModel):
+    customer_name: str = Field(description="The full name of the customer")
+    amount: float = Field(description="The amount for the payment link")
+    description: Optional[str] = Field(
+        default="Payment Request", description="Purpose of the payment"
+    )
+
+
+class PostSocialIntent(BaseModel):
+    platform: str = Field(
+        description="The platform: 'pixelfed', 'bluesky', or 'instagram'"
+    )
+    content: str = Field(description="The text content/caption for the post")
+    image_url: Optional[str] = Field(
+        default=None, description="URL of the image to include in the post"
     )
 
 
@@ -97,6 +118,8 @@ class UserIntent(BaseModel):
             CheckStockIntent,
             RecordPaymentIntent,
             GenerateReportIntent,
+            GeneratePaymentLinkIntent,
+            PostSocialIntent,
         ]
     ] = None
     missing_info: List[str]
@@ -150,9 +173,16 @@ class IntentService:
             "6. DISCOUNT LOGIC: If the user says 'Give 100rs discount' or 'Final price is 800 (for a 900 item)', set discount_applied=True. "
             "7. RESPONSE: Speak naturally in the requested language. "
             "8. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
-            "9. REPORTS: If the user wants to download, export, or see a report/excel of their stock or products, set intent_type to 'GENERATE_REPORT'."
-            "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name."
-            "11. GLOBAL DUES: If the user asks for 'Who owes money', 'list of debtors', or 'pending payments list', set intent_type to 'PAYMENT_REMINDER' and set customer_name to 'ALL'."
+            "9. REPORTS: If the user wants to download, export, or see a report/excel of their stock, ledger, or debtors, set intent_type to 'GENERATE_REPORT'. "
+            "   - If they specify 'ledger', set report_type='ledger'. "
+            "   - If they specify 'debtors' or 'aging', set report_type='debtors'. "
+            "   - Default format is 'excel' unless 'pdf' is mentioned. "
+            "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name. "
+            "11. GLOBAL DUES: If the user asks for 'Who owes money', 'list of debtors', or 'pending payments list', set intent_type to 'PAYMENT_REMINDER' and set customer_name to 'ALL'. "
+            "12. PAYMENT LINKS: If the user asks to 'generate a link', 'payment link', 'razorpay link', or 'ask for money via link', set intent_type to 'GENERATE_PAYMENT_LINK'. Extract customer_name and amount. "
+            "13. SOCIAL POSTING: If the user says 'post this', 'post on pixel', 'post on blusky', or 'upload status', set intent_type to 'POST_SOCIAL'. Extract the platform and content. "
+            "   - CRITICAL: Pixelfed is a photo-sharing platform and REQUIRES an image. If the user wants to post on Pixelfed but hasn't provided an image URL or mentioned an image, add 'image_url' to 'missing_info'. "
+            "   - TIP: If the user explicitly asks to 'use default', 'use original', or 'default image', set image_url to 'default' and do NOT mark it as missing info."
         )
 
     async def parse_message(self, text, language):
@@ -175,7 +205,7 @@ class IntentService:
     
     {
       "internal_thought": "Analysis of the user input...",
-      "intent_type": "CREATE_INVOICE" | "CHECK_STOCK" | "RECORD_PAYMENT" | "GENERATE_REPORT" | "PAYMENT_REMINDER" | "GENERAL",
+      "intent_type": "CREATE_INVOICE" | "CHECK_STOCK" | "RECORD_PAYMENT" | "GENERATE_REPORT" | "PAYMENT_REMINDER" | "GENERATE_PAYMENT_LINK" | "POST_SOCIAL" | "GENERAL",
       "confidence": 0.95,
       "data": {
         // Depends on intent_type. Example for CREATE_INVOICE:

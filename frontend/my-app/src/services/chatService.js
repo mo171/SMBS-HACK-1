@@ -103,4 +103,31 @@ export const chatService = {
       `invoice_${invoiceId}.xlsx`,
     );
   },
+
+  /**
+   * Downloads the overall ledger as PDF.
+   */
+  downloadLedgerPDF: async () => {
+    return chatService.downloadFile("/export/overall-ledger", "ledger.pdf");
+  },
+
+  /**
+   * Downloads the overall ledger as Excel.
+   */
+  downloadLedgerExcel: async () => {
+    return chatService.downloadFile(
+      "/export/overall-ledger-excel",
+      "ledger.xlsx",
+    );
+  },
+
+  /**
+   * Downloads the aging debtors report as Excel.
+   */
+  downloadDebtorsExcel: async () => {
+    return chatService.downloadFile(
+      "/export/aging-debtors",
+      "aging_debtors.xlsx",
+    );
+  },
 };

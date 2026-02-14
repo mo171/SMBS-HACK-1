@@ -276,8 +276,70 @@ async def intent_parser(
                 reply = f"Recorded payment of {result.data.amount} from {result.data.customer_name}."
 
             elif result.intent_type == "GENERATE_REPORT":
-                download_url = "/export/inventory"
-                reply = f"Report generated successfully. Download here: {download_url}"
+                report_type = result.data.report_type
+                fmt = result.data.format or "excel"
+
+                if report_type == "ledger":
+                    download_url = (
+                        "/export/overall-ledger-excel"
+                        if fmt == "excel"
+                        else "/export/overall-ledger"
+                    )
+                elif report_type == "debtors":
+                    download_url = "/export/aging-debtors"  # Currently only excel
+                else:
+                    download_url = "/export/inventory"
+
+                reply = f"The {report_type} report ({fmt}) is ready. Download here: {download_url}"
+
+            elif result.intent_type == "GENERATE_PAYMENT_LINK":
+                pay_data = await action_service.create_payment_link(
+                    result.data.amount,
+                    result.data.customer_name,
+                    result.data.description,
+                )
+                if pay_data.get("status") == "error":
+                    raise Exception(
+                        pay_data.get("message", "Error creating payment link")
+                    )
+
+                reply = f"Payment link for Rs. {result.data.amount} created for {result.data.customer_name}. Link: {pay_data['payment_url']}"
+                action_data = pay_data  # To inject into analysis
+
+            elif result.intent_type == "POST_SOCIAL":
+                try:
+                    post_data = await action_service.post_social_content(
+                        result.data.platform,
+                        result.data.content,
+                        getattr(result.data, "image_url", None),
+                    )
+                    if post_data.get("status") == "error":
+                        # Check if it's a specific "missing media" error for Pixelfed
+                        if (
+                            "No media provided" in post_data.get("message", "")
+                            and result.data.platform == "pixelfed"
+                        ):
+                            result.missing_info.append("image_url")
+                            result.response_text = "Pixelfed requires an image to post. Could you please provide an image URL or upload one?"
+                            session_manager.save_session(session_id, result)
+                            return {"status": "pending", "reply": result.response_text}
+
+                        raise Exception(
+                            post_data.get("message", "Error posting to social")
+                        )
+
+                    reply = f"Successfully posted to {result.data.platform}! View it here: {post_data.get('url', 'N/A')}"
+                    action_data = post_data  # To inject into analysis
+                except Exception as e:
+                    # Generic action failure handling for multi-turn persistence
+                    if (
+                        "No media provided" in str(e)
+                        or "info was missing" in str(e).lower()
+                    ):
+                        result.response_text = f"I tried to post, but it seems I'm still missing some info: {str(e)}. Can you provide it?"
+                        session_manager.save_session(session_id, result)
+                        return {"status": "pending", "reply": result.response_text}
+                    raise e
 
             elif result.intent_type == "PAYMENT_REMINDER":
                 if result.data.customer_name.upper() == "ALL":
@@ -371,6 +433,14 @@ async def intent_parser(
                     final_response["analysis"]["data"]["debtors"] = debtors.get(
                         "data", []
                     )
+
+            # INJECT ACTION DATA FOR PAYMENTS/SOCIAL
+            if (
+                result.intent_type in ["GENERATE_PAYMENT_LINK", "POST_SOCIAL"]
+                and "action_data" in locals()
+            ):
+                if final_response["analysis"].get("data"):
+                    final_response["analysis"]["data"].update(action_data)
 
             # RETURN THE FINAL RESPONSE
             # DEBUGGING: JSON Response for Success

@@ -30,3 +30,17 @@ async def export_aging_debtors():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/overall-ledger-excel")
+async def export_overall_ledger_excel():
+    """Download overall business ledger as Excel."""
+    try:
+        file_data = await action_service.generate_overall_ledger_excel()
+        return Response(
+            content=file_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=overall_ledger.xlsx"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
