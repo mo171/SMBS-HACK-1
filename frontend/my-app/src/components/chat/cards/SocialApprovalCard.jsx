@@ -14,11 +14,15 @@ export default function SocialApprovalCard({ data, onConfirm, onReject }) {
   const [content, setContent] = useState(data?.content || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState("pending"); // pending, approved, rejected
+  const [postUrl, setPostUrl] = useState(null);
 
   const handleApprove = async () => {
     setIsSubmitting(true);
     try {
-      await onConfirm(content);
+      const result = await onConfirm(content);
+      if (result && result.url) {
+        setPostUrl(result.url);
+      }
       setStatus("approved");
     } catch (error) {
       console.error(error);
@@ -43,13 +47,25 @@ export default function SocialApprovalCard({ data, onConfirm, onReject }) {
     return (
       <div className="mt-3 w-full max-w-[320px] bg-green-500/10 border border-green-500/20 rounded-xl p-5 flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/20">
             <Check className="w-4 h-4 text-white" />
           </div>
           <p className="text-sm font-semibold text-white">
-            Post Approved & Published!
+            Published Successfully!
           </p>
         </div>
+
+        {postUrl && (
+          <a
+            href={postUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-600/10 mt-1"
+          >
+            <ExternalLink className="w-3 h-3" />
+            View Live Post
+          </a>
+        )}
       </div>
     );
   }

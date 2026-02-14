@@ -144,7 +144,22 @@ class BlueskyTool(BaseTool):
 
         try:
             post = self.client.send_post(text=text, reply_to=reply_to)
-            return {"status": "success", "uri": post.uri, "cid": post.cid}
+
+            # Construct public URL: https://bsky.app/profile/{handle}/post/{rkey}
+            # The URI looks like: at://did:plc:xxx/app.bsky.feed.post/yyy
+            # We can use the DID directly in the URL if we can't get the handle easily,
+            # but bsky.app supports DID in the profile segment.
+            uri_parts = post.uri.split("/")
+            did = uri_parts[2]
+            rkey = uri_parts[-1]
+            public_url = f"https://bsky.app/profile/{did}/post/{rkey}"
+
+            return {
+                "status": "success",
+                "uri": post.uri,
+                "cid": post.cid,
+                "url": public_url,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 

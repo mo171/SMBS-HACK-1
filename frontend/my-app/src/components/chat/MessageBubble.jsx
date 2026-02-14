@@ -172,13 +172,14 @@ export default function MessageBubble({ message }) {
           <SocialApprovalCard
             data={message.data}
             onConfirm={async (updatedContent) => {
-              await chatService.confirmSocialPost(
+              const res = await chatService.confirmSocialPost(
                 "default_session", // We should probably pass real sessionId here
                 message.data.platform,
                 updatedContent,
                 message.data.image_url,
               );
               toast.success("Post Published Successfully!");
+              return res; // Return so Card can get the URL
             }}
             onReject={async () => {
               await chatService.rejectSocialPost("default_session");

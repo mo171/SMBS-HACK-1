@@ -75,8 +75,7 @@ class RecordPaymentIntent(BaseModel):
 
 class GenerateReportIntent(BaseModel):
     report_type: str = Field(
-        default="inventory",
-        description="The type of report: 'inventory', 'ledger', 'debtors', etc.",
+        description="The type of report: 'inventory', 'ledger', or 'debtors'."
     )
     format: Optional[str] = Field(
         default="excel", description="The format: 'excel' or 'pdf'."
@@ -170,26 +169,25 @@ class IntentService:
         self.system_instruction = (
             "You will receive 'Existing Memory' (current state) and 'New Voice' (new input). "
             "1. REASONING: Use 'internal_thought' to analyze the business state. Compare New Voice with Existing Memory. "
-            "2. BE AGENTIC: Identify what is missing to complete the task (Customer and Items/Products are priority). "
+            "2. DATA REQUIREMENTS: "
+            "   - CREATE_INVOICE: Requires 'customer_name' and 'items'. "
+            "   - RECORD_PAYMENT: Requires 'customer_name' and 'amount'. "
+            "   - CHECK_STOCK / UPDATE_INVENTORY: ONLY Requires 'product_name'. DO NOT ask for customer name. "
+            "   - PAYMENT_REMINDER: Requires 'customer_name'. "
             "3. NO PRICE NEEDED: Do NOT ask for individual product prices. The system will index them from the database. "
             "   - CRITICAL: If you have Item Name + Quantity, that is ENOUGH. Do NOT set 'missing_info' for Price or Total Amount. "
             "4. CONTEXT MERGING: Always MERGE New Voice into Existing Memory. NEVER lose existing data (like customer name, items, or payments) unless the user explicitly changes them. "
             "5. DUES/CREDIT LOGIC: If the user says 'Remaining 500 is due' or 'Balance 500', and matches it with a Total, implies Paid = Total - Due. Calculate it! "
-            "   - Example: 'Total 900, remaining 500 due' -> Amount Paid = 400. set is_due=True. "
             "6. DISCOUNT LOGIC: If the user says 'Give 100rs discount' or 'Final price is 800 (for a 900 item)', set discount_applied=True. "
             "7. RESPONSE: Speak naturally in the requested language. "
-            "8. COMPLETION: When you have Customer and at least one Item (with quantity), you can set 'missing_info' to an empty list. Don't wait for payment info unless it's explicitly missing or unclear."
-            "9. REPORTS: If the user wants to download, export, or see a report/excel of their stock, ledger, or debtors, set intent_type to 'GENERATE_REPORT'. "
-            "   - If they specify 'ledger', set report_type='ledger'. "
-            "   - If they specify 'debtors' or 'aging', set report_type='debtors'. "
-            "   - Default format is 'excel' unless 'pdf' is mentioned. "
-            "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name. "
-            "11. GLOBAL DUES: If the user asks for 'Who owes money', 'list of debtors', or 'pending payments list', set intent_type to 'PAYMENT_REMINDER' and set customer_name to 'ALL'. "
-            "12. PAYMENT LINKS: If the user asks to 'generate a link', 'payment link', 'razorpay link', or 'ask for money via link', set intent_type to 'GENERATE_PAYMENT_LINK'. Extract customer_name and amount. "
-            "13. SOCIAL POSTING: If the user says 'post this' or 'upload', set intent_type to 'POST_SOCIAL'. "
-            "   - CRITICAL: Social posts now go to a 'PREVIEW' state before going live. Tell the user you've prepared a draft for their review. "
-            "   - PIXELFED: Requires an image. If missing, set image_url to 'default' if they mention it, or add to 'missing_info'. "
-            "14. UPDATE STOCK: If user says 'set stock of X to 50' or 'update quantity of Y', use 'UPDATE_INVENTORY'. Extract product_name and new_stock."
+            "8. COMPLETION: Set 'missing_info' to an empty list ONLY when the mandatory fields for the detected intent (see point 2) are present. "
+            "9. REPORTS: If the user wants to download/export reports, use 'GENERATE_REPORT'. "
+            "   - 'ledger', 'inventory', or 'debtors' (use this for 'who owes money', 'aging report', or 'list of people who owe'). "
+            "10. CHECK STOCK: If user asks about 'stock' or 'quantity', use 'CHECK_STOCK'. Pass any spelled product name as 'product_name'. "
+            "11. DEBT CHECK: If asking for his/her debt (e.g., 'What is Rahul's debt?'), use 'PAYMENT_REMINDER'. "
+            "12. PAYMENT LINKS: Extract customer_name and amount. "
+            "13. SOCIAL POSTING: Set intent_type to 'POST_SOCIAL'. "
+            "14. UPDATE STOCK: Extract product_name and new_stock."
         )
 
     async def parse_message(self, text, language):

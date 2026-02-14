@@ -246,26 +246,36 @@ async def intent_parser(
                             "analysis": analysis_dump,
                         }
 
-                # IF ALL THE DATA IS THERE
-                action_data = await action_service.execute_invoice(result.data)
+            # 4. ACTION SELECTION & EXECUTION
+            action_data = {}
+            reply = ""
 
-                if action_data.get("status") == "error":
-                    print(f"!!! execute_invoice Error: {action_data.get('message')}")
+            if result.intent_type == "CREATE_INVOICE":
+                action_result = await action_service.execute_invoice(result.data)
+                if action_result.get("status") == "error":
                     raise Exception(
-                        action_data.get("message", "Unknown error creating invoice")
+                        action_result.get("message", "Error creating invoice")
                     )
-
                 reply = f"Invoice created successfully for {result.data.customer_name}."
+                action_data = action_result
 
             elif result.intent_type == "CHECK_STOCK":
                 stock = await action_service.get_stock(result.data.product_name)
-                if stock["found"]:
-                    reply = f"You have {stock['stock']} units of {stock['name']} left."
-                else:
-                    reply = f"Sorry, I couldn't find {result.data.product_name} in your inventory."
-                stock_data = stock
+                reply = (
+                    f"You have {stock['stock']} units of {stock['name']} left."
+                    if stock["found"]
+                    else f"Sorry, I couldn't find {result.data.product_name}."
+                )
+                action_data = stock
 
+            elif result.intent_type == "RECORD_PAYMENT":
+                pay_res = await action_service.record_payment(
+                    result.data.customer_name, result.data.amount
+                )
+                if pay_res.get("status") == "error":
+                    raise Exception(pay_res.get("message", "Error recording payment"))
                 reply = f"Recorded payment of {result.data.amount} from {result.data.customer_name}."
+                action_data = pay_res
 
             elif result.intent_type == "UPDATE_INVENTORY":
                 upd_res = await action_service.update_stock(
@@ -274,41 +284,44 @@ async def intent_parser(
                 if upd_res.get("status") == "error":
                     raise Exception(upd_res.get("message", "Error updating inventory"))
                 reply = upd_res.get("message")
-                stock_data = upd_res  # For StockCard
+                action_data = upd_res
 
             elif result.intent_type == "GENERATE_REPORT":
-                report_type = result.data.report_type
+                rtat = result.data.report_type.lower()
                 fmt = result.data.format or "excel"
 
-                if report_type == "ledger":
-                    download_url = (
-                        "/export/overall-ledger-excel"
-                        if fmt == "excel"
-                        else "/export/overall-ledger"
+                if "ledger" in rtat:
+                    report_type, url = (
+                        "ledger",
+                        (
+                            "/export/overall-ledger-excel"
+                            if fmt == "excel"
+                            else "/export/overall-ledger"
+                        ),
                     )
-                elif report_type == "debtors":
-                    download_url = "/export/aging-debtors"  # Currently only excel
+                elif "debtor" in rtat or "paisa" in rtat:
+                    report_type, url = "debtors", "/export/aging-debtors"
                 else:
-                    download_url = "/export/inventory"
+                    report_type, url = "inventory", "/export/inventory"
 
-                reply = f"The {report_type} report ({fmt}) is ready. Download here: {download_url}"
+                # Sync for frontend
+                result.data.report_type = report_type
+                result.data.format = fmt
+                reply = f"I've prepared your {report_type} report ({fmt}). You can download it below."
+                action_data = {"report_type": report_type, "format": fmt, "url": url}
 
             elif result.intent_type == "GENERATE_PAYMENT_LINK":
-                pay_data = await action_service.create_payment_link(
+                pay_res = await action_service.create_payment_link(
                     result.data.amount,
                     result.data.customer_name,
                     result.data.description,
                 )
-                if pay_data.get("status") == "error":
-                    raise Exception(
-                        pay_data.get("message", "Error creating payment link")
-                    )
-
-                reply = f"Payment link for Rs. {result.data.amount} created for {result.data.customer_name}. Link: {pay_data['payment_url']}"
-                action_data = pay_data  # To inject into analysis
+                if pay_res.get("status") == "error":
+                    raise Exception(pay_res.get("message", "Error creating link"))
+                reply = f"Payment link for Rs. {result.data.amount} created."
+                action_data = pay_res
 
             elif result.intent_type == "POST_SOCIAL":
-                # Divert to PREVIEW state for Human-in-the-Loop approval
                 result.intent_type = "PREVIEW_SOCIAL"
                 result.response_text = f"I've prepared a draft for your {result.data.platform} post. Please review it below."
                 session_manager.save_session(session_id, result)
@@ -319,115 +332,39 @@ async def intent_parser(
                 }
 
             elif result.intent_type == "PAYMENT_REMINDER":
-                if result.data.customer_name.upper() == "ALL":
-                    debtors = await action_service.get_all_debtors()
-                    if debtors.get("status") == "error":
-                        raise Exception(
-                            debtors.get("message", "Error fetching debtors")
-                        )
-
-                    # Also get overall business totals for the Outstanding Balance card
-                    ledger = await action_service.get_overall_ledger()
-                    if ledger.get("status") == "error":
-                        raise Exception(
-                            ledger.get("message", "Error fetching overall ledger")
-                        )
-
-                    if not debtors["data"]:
-                        reply = "Great news! No one owes you any money right now."
-                    else:
-                        debt_list = "\n".join(
-                            [
-                                f"- {d['full_name']}: Rs. {d['total_debt']}"
-                                for d in debtors["data"]
-                            ]
-                        )
-                        reply = (
-                            f"Here is the list of people who owe money:\n{debt_list}"
-                        )
+                ledger = await action_service.get_customer_ledger(
+                    result.data.customer_name
+                )
+                if ledger.get("status") == "error" or not ledger.get("customer"):
+                    reply = f"Sorry, I couldn't find a record for {result.data.customer_name}."
                 else:
-                    ledger = await action_service.get_customer_ledger(
-                        result.data.customer_name
+                    bal = ledger["balance_due"]
+                    reply = (
+                        f"Analysis: {ledger['customer']} owes Rs. {bal}."
+                        if bal > 0
+                        else f"{ledger['customer']} has no debt."
                     )
-                    if ledger.get("status") == "error":
-                        raise Exception(
-                            ledger.get("message", "Unknown error fetching ledger")
-                        )
-
-                    reply = f"{ledger['customer']} owes a balance of {ledger['balance_due']}."
+                    action_data = ledger
 
             else:
                 reply = result.response_text
 
-            """
-            - CLEAR THE SESSION AFTER THE ACTION IS EXECUTED
-            - CONSTRUCT THE FINAL RESPONSE
-            - INJECT THE ACTION DATA INTO THE ANALYSIS DATA
-            - INJECT THE STOCK DATA INTO THE ANALYSIS DATA
-            - RETURN THE FINAL RESPONSE
-            """
-            # SUCCESS & CLEANUP
+            # 5. FINAL RESPONSE & CLEANUP
             session_manager.clear_session(session_id)
-
-            # CONSTRUCT THE FINAL RESPONSE
             final_response = {
                 "status": "success",
                 "reply": reply,
-                "analysis": result.model_dump(),  # CONVERT TO DICT
+                "analysis": result.model_dump(),
             }
-            """
-            - INJECT THE ACTION DATA INTO THE ANALYSIS DATA
-            - INJECT THE STOCK DATA INTO THE ANALYSIS DATA
-            """
-            # VERIFY IF WE HAVE ACTION_DATA WITH ID
-            if result.intent_type == "CREATE_INVOICE" and "action_data" in locals():
-                if "invoice_id" in action_data:
-                    # INJECT INTO THE ANALYSIS DATA DICT
-                    if final_response["analysis"].get("data"):
-                        final_response["analysis"]["data"]["invoice_id"] = action_data[
-                            "invoice_id"
-                        ]
-                        # NEW: Inject the Enriched Items with Prices back to the Frontend
-                        # The Frontend likely renders 'result.data.items'.
-                        # We need to overwrite that specific part.
-                        if "items" in action_data:
-                            final_response["analysis"]["data"]["items"] = action_data[
-                                "items"
-                            ]
 
-            # INJECT STOCK DATA IF PRESENT
-            if result.intent_type == "CHECK_STOCK" and "stock_data" in locals():
-                if final_response["analysis"].get("data"):
-                    final_response["analysis"]["data"].update(stock_data)
+            # Inject action_data into analysis data for frontend card rendering
+            if action_data and final_response["analysis"].get("data"):
+                final_response["analysis"]["data"].update(action_data)
+                # Overwrite intent_type if needed (e.g. UPDATE_INVENTORY -> CHECK_STOCK card)
+                if result.intent_type == "UPDATE_INVENTORY":
+                    final_response["analysis"]["intent_type"] = "CHECK_STOCK"
 
-            # INJECT LEDGER DATA IF PRESENT (for PAYMENT_REMINDER)
-            if result.intent_type == "PAYMENT_REMINDER":
-                if "ledger" in locals() and final_response["analysis"].get("data"):
-                    # Inject ledger totals (works for both single customer and ALL)
-                    final_response["analysis"]["data"].update(ledger)
-                if "debtors" in locals() and final_response["analysis"].get("data"):
-                    # All debtors list
-                    final_response["analysis"]["data"]["debtors"] = debtors.get(
-                        "data", []
-                    )
-
-            # INJECT STOCK DATA FOR UPDATE_INVENTORY
-            if result.intent_type == "UPDATE_INVENTORY" and "stock_data" in locals():
-                if final_response["analysis"].get("data"):
-                    final_response["analysis"]["data"].update(stock_data)
-                    final_response["analysis"]["intent_type"] = (
-                        "CHECK_STOCK"  # Use existing card
-                    )
-
-            # INJECT ACTION DATA FOR PAYMENTS/SOCIAL
-            if (
-                result.intent_type in ["GENERATE_PAYMENT_LINK", "POST_SOCIAL"]
-                and "action_data" in locals()
-            ):
-                if final_response["analysis"].get("data"):
-                    final_response["analysis"]["data"].update(action_data)
-
-            # RETURN THE FINAL RESPONSE
+            return final_response
             # DEBUGGING: JSON Response for Success
             # {
             #   "status": "success",
@@ -563,6 +500,39 @@ async def export_invoice_excel(invoice_id: str):
         headers={
             "Content-Disposition": f"attachment; filename=invoice_{invoice_id}.xlsx"
         },
+    )
+
+
+@app.get("/export/overall-ledger")
+async def export_overall_ledger():
+    """Download overall ledger as PDF."""
+    pdf_bytes = await action_service.generate_overall_ledger_pdf()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=overall_ledger.pdf"},
+    )
+
+
+@app.get("/export/overall-ledger-excel")
+async def export_overall_ledger_excel():
+    """Download overall ledger as Excel."""
+    file_data = await action_service.generate_overall_ledger_excel()
+    return Response(
+        content=file_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=overall_ledger.xlsx"},
+    )
+
+
+@app.get("/export/aging-debtors")
+async def export_aging_debtors():
+    """Download aging debtors report as Excel."""
+    file_data = await action_service.generate_aging_debtors_excel()
+    return Response(
+        content=file_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=aging_debtors.xlsx"},
     )
 
 

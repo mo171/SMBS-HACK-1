@@ -106,8 +106,18 @@ export default function ChatInterface() {
       // Auto-trigger download for reports
       if (response.analysis?.intent_type === "GENERATE_REPORT") {
         try {
-          await chatService.downloadInventory();
-          toast.success("Downloading Inventory Report...");
+          const type = response.analysis.data?.report_type || "inventory";
+          const format = response.analysis.data?.format || "excel";
+
+          if (type === "ledger") {
+            if (format === "pdf") await chatService.downloadLedgerPDF();
+            else await chatService.downloadLedgerExcel();
+          } else if (type === "debtors") {
+            await chatService.downloadDebtorsExcel();
+          } else {
+            await chatService.downloadInventory();
+          }
+          toast.success(`Downloading ${type} Report...`);
         } catch (error) {
           console.error("Auto-download failed:", error);
         }
