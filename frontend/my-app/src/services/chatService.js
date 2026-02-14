@@ -130,4 +130,26 @@ export const chatService = {
       "aging_debtors.xlsx",
     );
   },
+  /**
+   * Confirms a drafted social post.
+   */
+  confirmSocialPost: async (sessionId, platform, content, imageUrl) => {
+    const response = await api.post("/chat/confirm-social", {
+      session_id: sessionId,
+      platform,
+      content,
+      image_url: imageUrl,
+    });
+    return response.data;
+  },
+
+  /**
+   * Rejects a drafted social post and clears the session.
+   */
+  rejectSocialPost: async (sessionId) => {
+    const response = await api.post("/chat/reject-social", {
+      session_id: sessionId,
+    });
+    return response.data;
+  },
 };

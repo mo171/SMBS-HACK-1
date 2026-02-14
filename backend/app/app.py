@@ -265,15 +265,16 @@ async def intent_parser(
                     reply = f"Sorry, I couldn't find {result.data.product_name} in your inventory."
                 stock_data = stock
 
-            elif result.intent_type == "RECORD_PAYMENT":
-                pay_res = await action_service.record_payment(
-                    result.data.customer_name, result.data.amount
-                )
-                if pay_res.get("status") == "error":
-                    raise Exception(
-                        pay_res.get("message", "Unknown error recording payment")
-                    )
                 reply = f"Recorded payment of {result.data.amount} from {result.data.customer_name}."
+
+            elif result.intent_type == "UPDATE_INVENTORY":
+                upd_res = await action_service.update_stock(
+                    result.data.product_name, result.data.new_stock
+                )
+                if upd_res.get("status") == "error":
+                    raise Exception(upd_res.get("message", "Error updating inventory"))
+                reply = upd_res.get("message")
+                stock_data = upd_res  # For StockCard
 
             elif result.intent_type == "GENERATE_REPORT":
                 report_type = result.data.report_type
@@ -307,39 +308,15 @@ async def intent_parser(
                 action_data = pay_data  # To inject into analysis
 
             elif result.intent_type == "POST_SOCIAL":
-                try:
-                    post_data = await action_service.post_social_content(
-                        result.data.platform,
-                        result.data.content,
-                        getattr(result.data, "image_url", None),
-                    )
-                    if post_data.get("status") == "error":
-                        # Check if it's a specific "missing media" error for Pixelfed
-                        if (
-                            "No media provided" in post_data.get("message", "")
-                            and result.data.platform == "pixelfed"
-                        ):
-                            result.missing_info.append("image_url")
-                            result.response_text = "Pixelfed requires an image to post. Could you please provide an image URL or upload one?"
-                            session_manager.save_session(session_id, result)
-                            return {"status": "pending", "reply": result.response_text}
-
-                        raise Exception(
-                            post_data.get("message", "Error posting to social")
-                        )
-
-                    reply = f"Successfully posted to {result.data.platform}! View it here: {post_data.get('url', 'N/A')}"
-                    action_data = post_data  # To inject into analysis
-                except Exception as e:
-                    # Generic action failure handling for multi-turn persistence
-                    if (
-                        "No media provided" in str(e)
-                        or "info was missing" in str(e).lower()
-                    ):
-                        result.response_text = f"I tried to post, but it seems I'm still missing some info: {str(e)}. Can you provide it?"
-                        session_manager.save_session(session_id, result)
-                        return {"status": "pending", "reply": result.response_text}
-                    raise e
+                # Divert to PREVIEW state for Human-in-the-Loop approval
+                result.intent_type = "PREVIEW_SOCIAL"
+                result.response_text = f"I've prepared a draft for your {result.data.platform} post. Please review it below."
+                session_manager.save_session(session_id, result)
+                return {
+                    "status": "pending",
+                    "reply": result.response_text,
+                    "analysis": result.model_dump(),
+                }
 
             elif result.intent_type == "PAYMENT_REMINDER":
                 if result.data.customer_name.upper() == "ALL":
@@ -432,6 +409,14 @@ async def intent_parser(
                     # All debtors list
                     final_response["analysis"]["data"]["debtors"] = debtors.get(
                         "data", []
+                    )
+
+            # INJECT STOCK DATA FOR UPDATE_INVENTORY
+            if result.intent_type == "UPDATE_INVENTORY" and "stock_data" in locals():
+                if final_response["analysis"].get("data"):
+                    final_response["analysis"]["data"].update(stock_data)
+                    final_response["analysis"]["intent_type"] = (
+                        "CHECK_STOCK"  # Use existing card
                     )
 
             # INJECT ACTION DATA FOR PAYMENTS/SOCIAL
@@ -1053,4 +1038,67 @@ async def generic_webhook_dispatcher(service_name: str, request: Request):
 # Serve Inngest functions properly
 # This exposes a '/api/inngest' endpoint which the Inngest Dev Server polls to
 # find out what functions (like execute_workflow) are available to run.
+@app.post("/chat/confirm-social")
+async def confirm_social_post(request: Request):
+    """Executes a previously drafted social post after user approval."""
+    try:
+        body = await request.json()
+        session_id = body.get("session_id")
+        content = body.get("content")
+        image_url = body.get("image_url")
+        platform = body.get("platform")
+
+        if not session_id or not platform or not content:
+            raise HTTPException(
+                status_code=400, detail="Missing required approval data"
+            )
+
+        # Execute Post
+        post_data = await action_service.post_social_content(
+            platform, content, image_url
+        )
+
+        if post_data.get("status") == "error":
+            raise Exception(post_data.get("message", "Error posting to social"))
+
+        # Save to DB (Persistent Approval History)
+        try:
+            action_service.supabase.table("social_posts").insert(
+                {
+                    "platform": platform,
+                    "content": content,
+                    "image_url": image_url,
+                    "status": "published",
+                    "external_id": post_data.get("url"),
+                }
+            ).execute()
+        except Exception as db_err:
+            print(f"!!! Error logging social post: {db_err}")
+
+        # Cleanup Session
+        session_manager.clear_session(session_id)
+
+        return {
+            "status": "success",
+            "message": f"Successfully posted to {platform}!",
+            "url": post_data.get("url"),
+        }
+    except Exception as e:
+        print(f"!!! Social confirmation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/reject-social")
+async def reject_social_post(request: Request):
+    """Rejects a social post draft and clears the session."""
+    try:
+        body = await request.json()
+        session_id = body.get("session_id")
+        if session_id:
+            session_manager.clear_session(session_id)
+        return {"status": "success", "message": "Social post draft rejected."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 serve(app, inngest_client, [execute_workflow])

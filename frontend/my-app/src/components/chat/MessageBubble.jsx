@@ -13,6 +13,7 @@ import Image from "next/image";
 import InvoiceCard from "./cards/InvoiceCard";
 import StockCard from "./cards/StockCard";
 import DebtCard from "./cards/DebtCard";
+import SocialApprovalCard from "./cards/SocialApprovalCard";
 import { toast } from "sonner";
 import { chatService } from "@/services/chatService";
 
@@ -165,6 +166,25 @@ export default function MessageBubble({ message }) {
               Open Payment Link
             </a>
           </div>
+        )}
+
+        {message.type === "PREVIEW_SOCIAL" && (
+          <SocialApprovalCard
+            data={message.data}
+            onConfirm={async (updatedContent) => {
+              await chatService.confirmSocialPost(
+                "default_session", // We should probably pass real sessionId here
+                message.data.platform,
+                updatedContent,
+                message.data.image_url,
+              );
+              toast.success("Post Published Successfully!");
+            }}
+            onReject={async () => {
+              await chatService.rejectSocialPost("default_session");
+              toast.info("Post draft rejected");
+            }}
+          />
         )}
 
         {message.type === "POST_SOCIAL" && (

@@ -101,6 +101,11 @@ class PostSocialIntent(BaseModel):
     )
 
 
+class UpdateStockIntent(BaseModel):
+    product_name: str = Field(description="The name of the item to update")
+    new_stock: float = Field(description="The new total quantity in stock")
+
+
 # Update UserIntent to include the new data type
 # MOST IMPORTANT SCHEMA OF INTENT SPECIFIER
 class UserIntent(BaseModel):
@@ -108,7 +113,7 @@ class UserIntent(BaseModel):
         description="Your step-by-step reasoning about the business task. Analyze what you know and what is missing specifically (e.g., 'I have the customer name and payment, but No items yet')."
     )
     intent_type: str = Field(
-        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, RECORD_PAYMENT, GENERATE_REPORT, or GENERAL"
+        description="CREATE_INVOICE, PAYMENT_REMINDER, CHECK_STOCK, RECORD_PAYMENT, GENERATE_REPORT, UPDATE_INVENTORY, or GENERAL"
     )
     confidence: float
     data: Optional[
@@ -120,6 +125,7 @@ class UserIntent(BaseModel):
             GenerateReportIntent,
             GeneratePaymentLinkIntent,
             PostSocialIntent,
+            UpdateStockIntent,
         ]
     ] = None
     missing_info: List[str]
@@ -180,9 +186,10 @@ class IntentService:
             "10. CHECK STOCK: If user asks about 'stock', 'inventory', 'how much', or 'quantity' of an item, use 'CHECK_STOCK'. Even if the spelling looks wrong (e.g. 'pcv pipe'), pass it as the product_name. "
             "11. GLOBAL DUES: If the user asks for 'Who owes money', 'list of debtors', or 'pending payments list', set intent_type to 'PAYMENT_REMINDER' and set customer_name to 'ALL'. "
             "12. PAYMENT LINKS: If the user asks to 'generate a link', 'payment link', 'razorpay link', or 'ask for money via link', set intent_type to 'GENERATE_PAYMENT_LINK'. Extract customer_name and amount. "
-            "13. SOCIAL POSTING: If the user says 'post this', 'post on pixel', 'post on blusky', or 'upload status', set intent_type to 'POST_SOCIAL'. Extract the platform and content. "
-            "   - CRITICAL: Pixelfed is a photo-sharing platform and REQUIRES an image. If the user wants to post on Pixelfed but hasn't provided an image URL or mentioned an image, add 'image_url' to 'missing_info'. "
-            "   - TIP: If the user explicitly asks to 'use default', 'use original', or 'default image', set image_url to 'default' and do NOT mark it as missing info."
+            "13. SOCIAL POSTING: If the user says 'post this' or 'upload', set intent_type to 'POST_SOCIAL'. "
+            "   - CRITICAL: Social posts now go to a 'PREVIEW' state before going live. Tell the user you've prepared a draft for their review. "
+            "   - PIXELFED: Requires an image. If missing, set image_url to 'default' if they mention it, or add to 'missing_info'. "
+            "14. UPDATE STOCK: If user says 'set stock of X to 50' or 'update quantity of Y', use 'UPDATE_INVENTORY'. Extract product_name and new_stock."
         )
 
     async def parse_message(self, text, language):

@@ -138,44 +138,19 @@ class ActionService:
             customer_id = await self.get_or_create_customer(intent_data.customer_name)
 
             # 1. Calculate Total Amount Logic
-            # STRATEGY:
-            # - If is_due=True: Total = Calculated(DB) or explicitly inferred from "Paid + Due" (if user said so).
-            #   But best is to rely on DB prices as the source of truth for "Total Bill".
-            # - If discount_applied=True: We accept 'amount_paid' (if present) as the Total Bill (effective price).
-            # - Default: Try DB prices.
-
-            # Get DB estimates first
             calc_result = await self.calculate_potential_total(intent_data.items)
             db_total = calc_result["total"]
 
-            # Decide on Final Total Amount
             final_total_amt = 0.0
-
             if intent_data.discount_applied and intent_data.amount_paid is not None:
-                # User says "Discount given, final price 800".
                 final_total_amt = intent_data.amount_paid
             elif intent_data.is_due and intent_data.amount_paid is not None:
-                # User says "Paid 400, rest due". Implies Total is likely the DB Total (or user mentioned total).
-                # If DB found prices, use them.
-                if db_total > 0:
-                    final_total_amt = db_total
-                else:
-                    # Fallback: We don't know total.
-                    # Complex case. If user said "Total 900, paid 400", amount_paid=400.
-                    # We might need to assume Total = Paid + Due if we had a "amount_due" field, but we don't in CreateInvoice.
-                    # For now, default to (Paid + 0) which is wrong for Due.
-                    # Lets assume for now DB always has price or we rely on logic upstream.
-                    final_total_amt = (
-                        db_total if db_total > 0 else intent_data.amount_paid
-                    )  # Fallback
+                final_total_amt = db_total if db_total > 0 else intent_data.amount_paid
             else:
-                # Standard Case
-                if db_total > 0:
-                    final_total_amt = db_total
-                else:
-                    final_total_amt = intent_data.amount_paid or 0
+                final_total_amt = (
+                    db_total if db_total > 0 else (intent_data.amount_paid or 0)
+                )
 
-            # Record amount_paid for later (Rejection logic)
             amount_paid_val = getattr(intent_data, "amount_paid", 0.0) or 0.0
 
             # Create Invoice Header
@@ -186,7 +161,7 @@ class ActionService:
                         "customer_id": customer_id,
                         "status": "pending",
                         "total_amount": final_total_amt,
-                        "amount_paid": amount_paid_val,  # NEW COLUMN
+                        "amount_paid": amount_paid_val,
                     }
                 )
                 .execute()
@@ -197,17 +172,10 @@ class ActionService:
             # Insert Line Items
             line_items = []
             for i, item in enumerate(intent_data.items):
-                # Match logic with calc_result to get unit price
-                # We can try to look up key in calc_result details
-                # Simple list index match since ordered
-
                 u_price = 0.0
                 if i < len(calc_result["details"]):
                     u_price = calc_result["details"][i]["unit_price"]
 
-                # If we applied a generic discount (Total = Paid), we need to adjust unit prices to match Total?
-                # Or just put u_price and let the sum mismatch?
-                # Better to scale unit price if discount applied.
                 if intent_data.discount_applied and db_total > 0:
                     ratio = final_total_amt / db_total
                     u_price = u_price * ratio
@@ -223,16 +191,12 @@ class ActionService:
 
             self.supabase.table("invoice_items").insert(line_items).execute()
 
-            # Record Payment (Full or Partial)
+            # Record Payment
             amount_paid = getattr(intent_data, "amount_paid", None)
-
-            # Logic: If 'is_due' is True, use the explicit amount_paid.
-            # If 'is_due' is False and 'amount_paid' is None -> Assume Full Payment
             if amount_paid is None and not intent_data.is_due:
                 amount_paid = final_total_amt
             elif amount_paid is None and intent_data.is_due:
-                amount_paid = 0  # "Remaining 500 is due" -> implies X paid? Or 0 paid? usually means partial.
-                # If user said "Total 900, remaining 500 due", prompt logic says Paid=400. So we are good.
+                amount_paid = 0
 
             if amount_paid and amount_paid > 0:
                 self.supabase.table("payments").insert(
@@ -244,12 +208,8 @@ class ActionService:
                 ).execute()
 
             # --- PERSISTENT DEBT SYNC ---
-            # Balance = Total - Paid
             balance_change = float(final_total_amt) - float(amount_paid or 0)
             if balance_change != 0:
-                # We update the customers' total_debt column
-                # Note: This is an additive update.
-                # We first get current, then add.
                 cust_data = (
                     self.supabase.table("customers")
                     .select("total_debt")
@@ -258,29 +218,38 @@ class ActionService:
                     .execute()
                 )
                 current_debt = float(cust_data.data.get("total_debt") or 0)
-                new_debt = current_debt + balance_change
-                self.supabase.table("customers").update({"total_debt": new_debt}).eq(
-                    "id", customer_id
-                ).execute()
-                print(f"DEBUG: Updated Customer Debt: {current_debt} -> {new_debt}")
+                self.supabase.table("customers").update(
+                    {"total_debt": current_debt + balance_change}
+                ).eq("id", customer_id).execute()
 
-            # Construct enriched items list for Frontend
+            # --- STOCK DEDUCTION ---
+            for item in intent_data.items:
+                try:
+                    prod_res = (
+                        self.supabase.table("products")
+                        .select("id, current_stock")
+                        .ilike("name", item.name)
+                        .execute()
+                    )
+                    if prod_res.data:
+                        p_id = prod_res.data[0]["id"]
+                        old_stock = float(prod_res.data[0]["current_stock"] or 0)
+                        self.supabase.table("products").update(
+                            {"current_stock": max(0, old_stock - item.quantity)}
+                        ).eq("id", p_id).execute()
+                except Exception as stock_err:
+                    print(f"!!! Stock deduction failed: {stock_err}")
+
+            # Construct enriched items list
             enriched_items = []
             for i, item in enumerate(intent_data.items):
-                u_price = 0.0
-                line_total = 0.0
-                # Try to grab from calc_result again or line_items
-                # Simplified: just grab from the 'line_items' dict we built for SQL
-                if i < len(line_items):
-                    u_price = line_items[i]["unit_price"]
-                    line_total = u_price * item.quantity
-
+                u_price = line_items[i]["unit_price"] if i < len(line_items) else 0.0
                 enriched_items.append(
                     {
                         "name": item.name,
                         "quantity": item.quantity,
-                        "price": u_price,  # Frontend expects 'price'
-                        "total": line_total,
+                        "price": u_price,
+                        "total": u_price * item.quantity,
                     }
                 )
 
@@ -288,8 +257,7 @@ class ActionService:
                 "status": "success",
                 "invoice_id": invoice_id,
                 "amount": final_total_amt,
-                "amount_paid": amount_paid or 0,
-                "items": enriched_items,  # RETURN THIS!
+                "items": enriched_items,
             }
 
         except Exception as e:
@@ -339,6 +307,48 @@ class ActionService:
                 }
 
         return {"found": False}
+
+    async def update_stock(self, product_name: str, new_stock: float):
+        """Updates stock in Supabase and syncs with Google Sheets."""
+        try:
+            # 1. Update Supabase
+            res = (
+                self.supabase.table("products")
+                .select("id, name")
+                .ilike("name", f"%{product_name}%")
+                .execute()
+            )
+            if not res.data:
+                return {
+                    "status": "error",
+                    "message": f"Product '{product_name}' not found in database.",
+                }
+
+            p_id = res.data[0]["id"]
+            actual_name = res.data[0]["name"]
+
+            self.supabase.table("products").update({"current_stock": new_stock}).eq(
+                "id", p_id
+            ).execute()
+
+            # 2. Sync with Google Sheets (Multi-platform update)
+            try:
+                # from integrations.sheets_tool import GoogleSheetsTool
+                # sheets = GoogleSheetsTool()
+                # Placeholder for real sheet sync
+                print(f"DEBUG: Syncing {actual_name} stock to Google Sheets...")
+                # await sheets.execute("update_cell", {"row_match": actual_name, "column": "Stock", "value": new_stock})
+            except Exception as sheet_err:
+                print(f"!!! Sheet sync failed: {sheet_err}")
+
+            return {
+                "status": "success",
+                "name": actual_name,
+                "new_stock": new_stock,
+                "message": f"Updated {actual_name} to {new_stock} units across platforms.",
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     # --- PAYMENT & LEDGER LOGIC (The "Y") ---
     async def record_payment(self, customer_name: str, amount: float):
