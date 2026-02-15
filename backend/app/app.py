@@ -58,7 +58,7 @@ from inngest.fast_api import serve
 from fastapi import Request
 from workflows.schema import WorkflowBlueprint
 from lib.supabase_lib import get_active_workflows_by_trigger
-from webhooks.instagram import router as instagram_router
+# from webhooks.instagram import router as instagram_router
 from routers.messages import router as messages_router
 from routers.dashboard import router as dashboard_router
 from routers.reports import router as reports_router
@@ -77,7 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(instagram_router)
+# app.include_router(instagram_router)
 app.include_router(messages_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
