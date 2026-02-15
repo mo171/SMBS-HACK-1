@@ -7,8 +7,8 @@ from .bluesky_tool import BlueskyTool
 from .social_logic_tool import SocialLogicTool
 from .instagram_tool import InstagramTool
 from .pixelfed_tool import PixelfedTool
-from tools.database_tool import DatabaseTool
-from tools.gpt_tool import GPTTool
+from .database_tool import DatabaseTool
+from .gpt_tool import GPTTool
 
 TOOL_REGISTRY = {
     "whatsapp": WhatsAppTool(),

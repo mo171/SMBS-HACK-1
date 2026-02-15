@@ -1,6 +1,6 @@
 from inngest import Inngest, TriggerEvent
 from integrations import TOOL_REGISTRY
-from lib.variable_resolver import resolve_variables
+
 from datetime import datetime
 from lib.supabase_lib import supabase
 
@@ -126,7 +126,34 @@ async def execute_workflow(ctx):
                 try:
                     next_node_id = None
 
-                    if node_type == "router":
+                    if node_type == "trigger":
+                        # TRIGGER LOGIC - Pass through the event payload
+                        print(f"🎯 [WorkflowEngine] Processing trigger node {node_id}")
+                        print(f"📦 [WorkflowEngine] Trigger data: {event_payload}")
+
+                        action_result = event_payload  # Pass payload directly
+
+                        print(
+                            "✅ [WorkflowEngine] Trigger node completed - data available directly"
+                        )
+
+                        # Find next node using same logic as action nodes
+                        next_node_id = node.get("next_node_id")
+
+                        if not next_node_id:
+                            current_index = -1
+                            for i, n in enumerate(blueprint["nodes"]):
+                                if n["id"] == node_id:
+                                    current_index = i
+                                    break
+                            if current_index != -1 and current_index + 1 < len(
+                                blueprint["nodes"]
+                            ):
+                                next_node_id = blueprint["nodes"][current_index + 1][
+                                    "id"
+                                ]
+
+                    elif node_type == "router":
                         # ROUTER LOGIC
                         from lib.router_logic import find_next_step
 
@@ -202,6 +229,15 @@ async def execute_workflow(ctx):
                     # Store the result
                     results[node_id] = action_result
 
+                    # ROBUSTNESS: Also store by service name if not already taken
+                    # This allows users to use {{razorpay.field}} regardless of the node ID
+                    service_name = node.get("data", {}).get("service")
+                    if service_name and service_name not in results:
+                        print(
+                            f"🔗 [WorkflowEngine] Mapping node {node_id} to service alias: {service_name}"
+                        )
+                        results[service_name] = action_result
+
                     # Mark node as completed
                     node_states[node_id] = {
                         "status": "completed",
@@ -227,6 +263,7 @@ async def execute_workflow(ctx):
                             .update({"step_results": ns})
                             .eq("run_id", ctx.run_id)
                             .execute()
+                            .data
                         ),
                     )
                     raise node_error
@@ -300,9 +337,9 @@ async def execute_workflow(ctx):
         print("💾 [WorkflowEngine] Logging failure to Supabase")
         await ctx.step.run(
             "log_failure",
-            lambda: (
+            lambda err=e: (
                 supabase.table("workflow_logs")
-                .update({"status": "failed", "error_message": str(e)})
+                .update({"status": "failed", "error_message": str(err)})
                 .eq("run_id", ctx.run_id)
                 .execute()
                 .data
@@ -329,12 +366,11 @@ async def perform_action(action_data, context_data):
     print(f"📝 [perform_action] Task: {task}")
     print(f"📦 [perform_action] Raw params: {raw_params}")
 
-    # 1. Resolve variables against the current state
+    # 1. Resolve variables against the current state (Recursively)
     print(f"🔍 [perform_action] Resolving variables in raw_params: {raw_params}")
-    resolved_params = {
-        k: resolve_variables(v, context_data) if isinstance(v, str) else v
-        for k, v in raw_params.items()
-    }
+    from lib.variable_resolver import resolve_recursive
+
+    resolved_params = resolve_recursive(raw_params, context_data)
     print(f"✅ [perform_action] Resolved params result: {resolved_params}")
 
     # 2. Lookup the tool in the registry

@@ -31,6 +31,32 @@ class GPTTool:
         self.client = AsyncOpenAI(api_key=api_key)
         print("✅ [GPTTool] Initialized")
 
+    @property
+    def service_name(self) -> str:
+        return "gpt"
+
+    async def execute(self, task: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute GPT task based on task name."""
+        print(f"\n🧠 [GPTTool] Executing task: {task}")
+        print(f"📊 [GPTTool] Parameters: {params}")
+
+        try:
+            if task == "process_text":
+                result = await self.process_text(
+                    input_data=params.get("input_data", ""),
+                    persona=params.get("persona"),
+                    output_format=params.get("output_format", "text"),
+                    instructions=params.get("instructions"),
+                    temperature=params.get("temperature", 0.7),
+                )
+                return {"status": "success", **result}
+            else:
+                return {"status": "error", "message": f"Unknown task: {task}"}
+
+        except Exception as e:
+            print(f"❌ [GPTTool] Execution error: {e}")
+            return {"status": "error", "message": str(e)}
+
     async def process_text(
         self,
         input_data: str,
